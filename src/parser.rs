@@ -1,6 +1,17 @@
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
+use stop_words::{get, LANGUAGE::English}; // Import required components from stop-words crate
+use std::collections::HashSet;
+use lazy_static::lazy_static;
+
+// Cache the stop words for the English language
+lazy_static! {
+    static ref STOP_WORDS: HashSet<String> = {
+        let words = get(English);
+        words.into_iter().collect()
+    };
+}
 
 pub fn parse_document(document: &str) -> (usize, String, Vec<String>) {
     let doc_id = extract_doc_id(document);
@@ -37,9 +48,24 @@ pub fn parse_line(line: &str) -> Vec<String> {
     // Normalize the text to NFKC (Normalization Form KC: Compatibility Composition)
     let normalized = line.nfkc().collect::<String>();
 
-    // Tokenize into words using unicode segmentation
-    let words = normalized.unicode_words();
+    // Replace "." and "_" and "-" with whitespace to treat them as delimiters
+    let replaced = normalized.replace(".", " ")
+        .replace("_", " ")
+        .replace("-", " ");
 
-    // Convert to lowercase and collect
-    words.map(|word| word.to_lowercase()).collect()
+    // Tokenize into words using unicode segmentation
+    let words = replaced.unicode_words();
+
+    // Convert to lowercase, filter out stop words and collect
+    words.map(|word| word.to_lowercase())
+        .filter(|word| !STOP_WORDS.contains(word))
+        .filter(|word| {
+            // Check if it's a number and if it's less than 10
+            if let Ok(num) = word.parse::<f64>() {
+                num >= 10.0
+            } else {
+                true // Keep non-numeric words
+            }
+        })
+        .collect()
 }
