@@ -12,8 +12,7 @@ use serde_json;
 #[cfg(not(feature = "debug_unicode"))]
 use bincode;
 use crate::{decompressor, indexer, utils};
-
-const BATCH_SIZE: usize = 100; // number of documents to process before dumping to disk
+use crate::utils::BATCH_SIZE; // number of documents to process before dumping to disk
 
 pub fn process_gzip_file(file_path: &str) -> std::io::Result<()> {
     let reader = decompressor::decompress_gzip_file(file_path)?;
