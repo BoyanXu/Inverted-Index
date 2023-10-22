@@ -15,6 +15,7 @@ unicode-normalization = "0.1.22"
 unicode-segmentation = "1.10.1"
 stop-words = "0.8.0"
 lazy_static = "1.4.0"
+chrono = { version = "0.4.31", features = [] }
 
 [features]
 debug_unicode = []
