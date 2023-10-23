@@ -4,10 +4,10 @@ use std::io::Write;
 use std::path::Path;
 use std::io::BufRead;
 use chrono::Utc;
-
+use crate::external_sorter::merge_sorted_files;
+use std::fs::read_dir;
 
 #[cfg(feature = "debug_unicode")]
-use serde_json;
 
 #[cfg(not(feature = "debug_unicode"))]
 use bincode;
@@ -71,7 +71,7 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
     #[cfg(feature = "debug_unicode")]
     {
         // For debugging: save as a readable JSON file
-        let serialized_data = serde_json::to_string_pretty(&postings).expect("Failed to serialize postings as JSON");
+        let serialized_data = serde_json::to_string(&postings).expect("Failed to serialize postings as JSON");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
     }
@@ -96,7 +96,7 @@ pub fn write_lexicon_to_disk(lexicon: &HashMap<String, u32>) {
 
     #[cfg(feature = "debug_unicode")]
     {
-        let serialized_data = serde_json::to_string_pretty(&sorted_terms).expect("Failed to serialize lexicon as JSON");
+        let serialized_data = serde_json::to_string(&sorted_terms).expect("Failed to serialize lexicon as JSON");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
     }
@@ -116,7 +116,7 @@ pub fn write_doc_metadata_to_disk(metadata: &HashMap<usize, (String, u32)>) {
 
     #[cfg(feature = "debug_unicode")]
     {
-        let serialized_data = serde_json::to_string_pretty(metadata).expect("Failed to serialize doc_metadata as JSON");
+        let serialized_data = serde_json::to_string(metadata).expect("Failed to serialize doc_metadata as JSON");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
     }
@@ -127,4 +127,19 @@ pub fn write_doc_metadata_to_disk(metadata: &HashMap<usize, (String, u32)>) {
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(&serialized_data).expect("Failed to write to file");
     }
+}
+
+pub fn merge_sorted_postings() -> std::io::Result<()> {
+    let dir = Path::new("postings_data");
+    let output_dir = Path::new("data");
+
+    // Get all batches (files) in the postings_data directory
+    let files: Vec<_> = read_dir(dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .collect();
+
+    // Merge these batches into the desired output directory
+    let merged_output_path = output_dir.join("merged_postings.data");
+    merge_sorted_files(&merged_output_path.to_string_lossy(), files)
 }
