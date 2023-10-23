@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use bimap::BiMap;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::Path;
 use std::io::BufRead;
 use chrono::Utc;
@@ -135,6 +135,29 @@ pub fn write_doc_metadata_to_disk(metadata: &HashMap<usize, (String, u32)>) {
     }
 }
 
+fn load_lexicon_from_disk() -> std::io::Result<BiMap<String, u32>> {
+    // Path where the lexicon is stored
+    let path = Path::new("data").join("lexicon.data");
+
+    #[cfg(feature = "debug_unicode")]
+    {
+        let file = File::open(&path)?;
+        let reader = BufReader::new(file);
+        let data: Vec<(String, u32)> = serde_json::from_reader(reader).expect("Failed to deserialize lexicon from JSON");
+        let bimap: BiMap<String, u32> = data.into_iter().collect();
+        Ok(bimap)
+    }
+
+    #[cfg(not(feature = "debug_unicode"))]
+    {
+        let file = File::open(&path)?;
+        let data: Vec<u8> = file.bytes().filter_map(Result::ok).collect();
+        let terms_with_ids: Vec<(String, u32)> = bincode::deserialize(&data).expect("Failed to deserialize lexicon");
+        let bimap: BiMap<String, u32> = terms_with_ids.into_iter().collect();
+        Ok(bimap)
+    }
+}
+
 pub fn merge_sorted_postings() -> std::io::Result<()> {
     let dir = Path::new("postings_data");
     let output_dir = Path::new("data");
@@ -144,6 +167,9 @@ pub fn merge_sorted_postings() -> std::io::Result<()> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .collect();
+
+    // Load the term_id_map from the lexicon data file
+    // let term_id_map = load_lexicon_from_disk()?;
 
     // Merge these batches into the desired output directory
     let merged_output_path = output_dir.join("merged_postings.data");
