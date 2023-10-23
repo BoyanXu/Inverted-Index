@@ -2,33 +2,38 @@ use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use serde_json;
 
-// The `MergingIterator` definition:
 struct MergingIterator {
-    reader: BufReader<File>,
-    next_line: Option<String>,
+    next_data: Option<HashMap<u32, HashMap<usize, u32>>>,
 }
 
 impl MergingIterator {
-    fn new(file: File) -> Self {
-        let mut reader = BufReader::new(file);
-        let next_line = reader.by_ref().lines().next().and_then(|l| l.ok());
-        MergingIterator { reader, next_line }
-    }
-
-    fn next(&mut self) -> Option<HashMap<u32, HashMap<usize, u32>>> {
-        if let Some(line) = &self.next_line {
-            if let Ok(hash_map) = serde_json::from_str::<HashMap<u32, HashMap<usize, u32>>>(line) {
-                self.next_line = self.reader.by_ref().lines().next().and_then(|l| l.ok());
-                return Some(hash_map);
+    fn new(mut file: File) -> std::io::Result<Self> {
+        let next_data = {
+            #[cfg(feature = "debug_unicode")]
+            {
+                let mut reader = BufReader::new(&file);
+                reader.by_ref().lines().next().and_then(|l| l.ok()).and_then(|line| {
+                    serde_json::from_str::<HashMap<u32, HashMap<usize, u32>>>(&line).ok()
+                })
             }
-        }
-        None
+
+            #[cfg(not(feature = "debug_unicode"))]
+            {
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer)?;
+                Some(bincode::deserialize::<HashMap<u32, HashMap<usize, u32>>>(&buffer).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?)
+            }
+        };
+
+        Ok(MergingIterator { next_data })
+    }
+    fn next(&mut self) -> Option<HashMap<u32, HashMap<usize, u32>>> {
+        self.next_data.take()
     }
 }
 
-// The `ReverseOrdered` definition:
+
 struct ReverseOrdered {
     value: HashMap<u32, HashMap<usize, u32>>,
     idx: usize,
@@ -56,12 +61,12 @@ impl PartialOrd for ReverseOrdered {
     }
 }
 
-// The main merging function:
 pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> std::io::Result<()> {
     let mut merging_iters: Vec<MergingIterator> = input_files.into_iter()
         .map(File::open)
         .filter_map(|f| f.ok())
         .map(MergingIterator::new)
+        .filter_map(Result::ok) // Keep only Ok iterators, discard Err ones
         .collect();
 
     let mut heap = BinaryHeap::new();
@@ -79,9 +84,19 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
     let mut writer = BufWriter::new(output_file);
 
     while let Some(ReverseOrdered { value, idx }) = heap.pop() {
-        let serialized_data = serde_json::to_string(&value)?;
-        writer.write_all(serialized_data.as_bytes())?;
-        writer.write_all(b"\n")?;
+        #[cfg(feature = "debug_unicode")]
+        {
+            let serialized_data = serde_json::to_string(&value)?;
+            writer.write_all(serialized_data.as_bytes())?;
+            writer.write_all(b"\n")?;
+        }
+
+        #[cfg(not(feature = "debug_unicode"))]
+        {
+            let serialized_data = bincode::serialize(&value)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            writer.write_all(&serialized_data)?;
+        }
 
         if let Some(val) = merging_iters[idx].next() {
             heap.push(ReverseOrdered {

@@ -22,12 +22,9 @@ fn cleanup_postings_data_folder() -> std::io::Result<()> {
 }
 
 fn main() {
-    // Clean up postings_data folder if debug_unicode feature is enabled
-    #[cfg(feature = "debug_unicode")]
-    {
-        if let Err(e) = cleanup_postings_data_folder() {
-            eprintln!("Error cleaning up postings_data folder: {}", e);
-        }
+
+    if let Err(e) = cleanup_postings_data_folder() {
+        eprintln!("Error cleaning up postings_data folder: {}", e);
     }
 
     let file_path = "data/msmarco-docs.trec.gz";
