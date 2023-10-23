@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
+use bimap::BiMap;
 use std::io::Write;
 use std::path::Path;
 use std::io::BufRead;
@@ -85,10 +86,15 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
     }
 }
 
-pub fn write_lexicon_to_disk(lexicon: &HashMap<String, u32>) {
-    // Sort the lexicon
-    let mut sorted_terms: Vec<_> = lexicon.iter().collect();
-    sorted_terms.sort_by(|a, b| a.0.cmp(b.0));
+pub fn write_lexicon_to_disk(lexicon: &BiMap<String, u32>) {
+    // Sort the lexicon based on the terms (left values)
+    let mut sorted_terms: Vec<_> = lexicon.left_values().cloned().collect();
+    sorted_terms.sort_by(|a, b| a.cmp(b));
+
+    // Convert the sorted terms into a Vec<(String, u32)>
+    let terms_with_ids: Vec<(String, u32)> = sorted_terms.iter()
+        .map(|term| (term.clone(), *lexicon.get_by_left(term).unwrap()))
+        .collect();
 
     // Path to store the lexicon
     let path = Path::new("data").join("lexicon.data");
@@ -96,14 +102,14 @@ pub fn write_lexicon_to_disk(lexicon: &HashMap<String, u32>) {
 
     #[cfg(feature = "debug_unicode")]
     {
-        let serialized_data = serde_json::to_string(&sorted_terms).expect("Failed to serialize lexicon as JSON");
+        let serialized_data = serde_json::to_string(&terms_with_ids).expect("Failed to serialize lexicon as JSON");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
     }
 
     #[cfg(not(feature = "debug_unicode"))]
     {
-        let serialized_data = bincode::serialize(&sorted_terms).expect("Failed to serialize lexicon");
+        let serialized_data = bincode::serialize(&terms_with_ids).expect("Failed to serialize lexicon");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(&serialized_data).expect("Failed to write to file");
     }

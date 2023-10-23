@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use crate::disk_io;
+use bimap::BiMap;
 
 pub struct Indexer {
     // Temporary postings: (token_ID, {document_ID: frequency})
@@ -8,8 +9,8 @@ pub struct Indexer {
     // Metadata about the documents: (docID, (URL, number_of_terms))
     doc_metadata: HashMap<usize, (String, u32)>,
 
-    // Mapping from terms to IDs
-    term_to_id: HashMap<String, u32>,
+    // Bidirectional mapping from terms to IDs
+    term_id_map: BiMap<String, u32>,
     current_term_id: u32,
 }
 
@@ -18,7 +19,7 @@ impl Indexer {
         Self {
             postings: HashMap::new(),
             doc_metadata: HashMap::new(),
-            term_to_id: HashMap::new(),
+            term_id_map: BiMap::new(),
             current_term_id: 0,
         }
     }
@@ -36,11 +37,15 @@ impl Indexer {
         }
 
         for (token, freq) in token_freq {
-            let term_id = *self.term_to_id.entry(token.to_string()).or_insert_with(|| {
-                let id = self.current_term_id;
-                self.current_term_id += 1;
-                id
-            });
+            let term_id = match self.term_id_map.get_by_left(&token.to_string()) {
+                Some(id) => *id,
+                None => {
+                    let id = self.current_term_id;
+                    self.term_id_map.insert(token.to_string(), id);
+                    self.current_term_id += 1;
+                    id
+                }
+            };
 
             let doc_freq = self.postings.entry(term_id)
                 .or_insert_with(HashMap::new)
@@ -60,11 +65,12 @@ impl Indexer {
     }
 
     pub fn dump_lexicon_to_disk(&self) {
-        disk_io::write_lexicon_to_disk(&self.term_to_id);
+        // Convert BiMap to a standard HashMap for disk storage
+        disk_io::write_lexicon_to_disk(&self.term_id_map);
+
     }
 
     pub fn dump_doc_metadata_to_disk(&self) {
         disk_io::write_doc_metadata_to_disk(&self.doc_metadata);
     }
-
 }
