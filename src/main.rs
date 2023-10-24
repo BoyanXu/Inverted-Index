@@ -1,8 +1,5 @@
-mod decompressor;
 mod parser;
 mod indexer;
-mod compressor;
-mod unicode_handler;
 mod utils;
 mod disk_io;
 mod external_sorter;
