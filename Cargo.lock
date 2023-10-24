@@ -15,6 +15,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stop-words",
+ "stream-vbyte",
  "unicode-normalization",
  "unicode-segmentation",
 ]
@@ -308,6 +309,12 @@ checksum = "8500024d809de02ecbf998472b7bed3c4fca380df2be68917f6a473bdb28ddcc"
 dependencies = [
  "serde_json",
 ]
+
+[[package]]
+name = "stream-vbyte"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f04a005bc697f0aed603e32beaab46d4a69fc4f41503c3b1b0c2168201b9e51"
 
 [[package]]
 name = "syn"

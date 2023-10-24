@@ -3,11 +3,13 @@ mod indexer;
 mod utils;
 mod disk_io;
 mod external_sorter;
+mod bin_indexer;
 
 use std::fs;
 use std::path::Path;
 use disk_io::process_gzip_file;
 use disk_io::merge_sorted_postings;
+use bin_indexer::build_binary_inverted_index;
 
 // Function to clean up the postings_data folder
 fn cleanup_postings_data_folder() -> std::io::Result<()> {
@@ -34,5 +36,10 @@ fn main() {
         eprintln!("Error merging sorted postings: {}", e);
     }
 
+    // Build binary inverted index and store in 'data/' directory
+    if let Err(e) = build_binary_inverted_index("data/merged_postings.data",
+                                                "data/bin_index.data", "data/bin_lexicon.data") {
+        eprintln!("Error building binary inverted index: {}", e);
+    }
 
 }
