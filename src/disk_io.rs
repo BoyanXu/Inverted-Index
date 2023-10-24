@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use bimap::BiMap;
-use std::io::{BufReader, Write};
+use std::io::Write;
 use std::path::Path;
 use std::io::BufRead;
 use chrono::Utc;
@@ -157,9 +157,6 @@ pub fn merge_sorted_postings() -> std::io::Result<()> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .collect();
-
-    // Load the term_id_map from the lexicon data file
-    // let term_id_map = load_lexicon_from_disk()?;
 
     // Merge these batches into the desired output directory
     let merged_output_path = output_dir.join("merged_postings.data");

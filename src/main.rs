@@ -36,4 +36,6 @@ fn main() {
     if let Err(e) = merge_sorted_postings() {
         eprintln!("Error merging sorted postings: {}", e);
     }
+
+
 }

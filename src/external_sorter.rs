@@ -83,11 +83,10 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
         .map(File::open)
         .filter_map(|f| f.ok())
         .map(MergingIterator::new)
-        .filter_map(Result::ok) // Keep only Ok iterators, discard Err ones
+        .filter_map(Result::ok)
         .collect();
 
     let mut heap = BinaryHeap::new();
-
     for (idx, iter) in merging_iters.iter_mut().enumerate() {
         if let Some(val) = iter.next() {
             heap.push(ReverseOrdered {
@@ -100,19 +99,24 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
     let output_file = File::create(output_file_path)?;
     let mut writer = BufWriter::new(output_file);
 
+    let mut current_term: Option<String> = None;
+    let mut current_buffer: HashMap<usize, u32> = HashMap::new();
+
     while let Some(ReverseOrdered { value, idx }) = heap.pop() {
-        #[cfg(feature = "debug_unicode")]
-        {
-            let serialized_data = serde_json::to_string(&value)?;
-            writer.write_all(serialized_data.as_bytes())?;
-            writer.write_all(b"\n")?;
+        let (term, postings) = value;
+
+        if let Some(ref current_t) = current_term {
+            if &term != current_t { // Term changed
+                // Write current buffer to disk and reset
+                write_posting(&mut writer, (current_t.clone(), current_buffer.clone()))?;
+                current_buffer.clear();
+            }
         }
 
-        #[cfg(not(feature = "debug_unicode"))]
-        {
-            let serialized_data = bincode::serialize(&value)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            writer.write_all(&serialized_data)?;
+        current_term = Some(term.clone());
+
+        for (doc_id, freq) in postings {
+            *current_buffer.entry(doc_id).or_insert(0) += freq;
         }
 
         if let Some(val) = merging_iters[idx].next() {
@@ -121,6 +125,34 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
                 idx,
             });
         }
+    }
+
+    // Write any remaining data in the buffer
+    if let Some(term) = current_term {
+        write_posting(&mut writer, (term, current_buffer))?;
+    }
+
+    Ok(())
+}
+
+// Helper function to write postings to file
+fn write_posting(writer: &mut BufWriter<File>, posting: (String, HashMap<usize, u32>)) -> std::io::Result<()> {
+    // Sort by doc_ID (although HashMap doesn't guarantee order, it's helpful to do it explicitly)
+    let mut sorted_posting: Vec<(usize, u32)> = posting.1.into_iter().collect();
+    sorted_posting.sort_by_key(|&(doc_id, _)| doc_id);
+
+    #[cfg(feature = "debug_unicode")]
+    {
+        let serialized_data = serde_json::to_string(&(posting.0, sorted_posting))?;
+        writer.write_all(serialized_data.as_bytes())?;
+        writer.write_all(b"\n")?;
+    }
+
+    #[cfg(not(feature = "debug_unicode"))]
+    {
+        let serialized_data = bincode::serialize(&(posting.0, sorted_posting))
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        writer.write_all(&serialized_data)?;
     }
 
     Ok(())
