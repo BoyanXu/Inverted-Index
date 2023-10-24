@@ -59,6 +59,19 @@ pub fn process_gzip_file(file_path: &str) -> std::io::Result<()> {
 }
 
 pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
+    // Create a vector of mutable references to the postings entries
+    let mut sorted_postings: Vec<_> = postings.iter().collect();
+
+    // Sort the vector based on token_ID
+    sorted_postings.sort_by_key(|&(token_id, _)| *token_id);
+
+    // Debug information
+    println!("Postings length: {}", postings.len());
+    for (token_id, _) in sorted_postings.iter().take(10) {
+        println!("{}", token_id);
+    }
+    println!("...");
+
     // Get the current timestamp
     let current_time = Utc::now();
     let filename = format!("postings_{}.data", current_time.format("%Y%m%d%H%M%S%f"));
@@ -72,7 +85,7 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
     #[cfg(feature = "debug_unicode")]
     {
         // For debugging: save as a readable JSON file
-        let serialized_data = serde_json::to_string(&postings).expect("Failed to serialize postings as JSON");
+        let serialized_data = serde_json::to_string(&sorted_postings).expect("Failed to serialize sorted postings as JSON");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
     }
@@ -80,16 +93,17 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
     #[cfg(not(feature = "debug_unicode"))]
     {
         // Production: save as binary format
-        let serialized_data = bincode::serialize(&postings).expect("Failed to serialize postings");
+        let serialized_data = bincode::serialize(&sorted_postings).expect("Failed to serialize sorted postings");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(&serialized_data).expect("Failed to write to file");
     }
 }
 
+
 pub fn write_lexicon_to_disk(lexicon: &BiMap<String, u32>) {
     // Sort the lexicon based on the terms (left values)
     let mut sorted_terms: Vec<_> = lexicon.left_values().cloned().collect();
-    sorted_terms.sort_by(|a, b| a.cmp(b));
+    sorted_terms.sort();
 
     // Convert the sorted terms into a Vec<(String, u32)>
     let terms_with_ids: Vec<(String, u32)> = sorted_terms.iter()
