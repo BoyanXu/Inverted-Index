@@ -4,40 +4,59 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 
 struct MergingIterator {
-    next_data: Option<HashMap<u32, HashMap<usize, u32>>>,
+    data: Vec<(String, HashMap<usize, u32>)>,
+    position: usize,
 }
 
 impl MergingIterator {
     fn new(mut file: File) -> std::io::Result<Self> {
-        let next_data = {
+        let data = {
             #[cfg(feature = "debug_unicode")]
             {
                 let mut reader = BufReader::new(&file);
-                reader.by_ref().lines().next().and_then(|l| l.ok()).and_then(|line| {
-                    serde_json::from_str::<HashMap<u32, HashMap<usize, u32>>>(&line).ok()
-                })
+                let line = reader.by_ref().lines().next().and_then(|l| l.ok());
+                match serde_json::from_str::<Vec<(String, HashMap<usize, u32>)>>(&line.unwrap_or_default()) {
+                    Ok(vec_data) => vec_data,
+                    Err(e) => {
+                        eprintln!("Failed to deserialize data from file: {}", e);
+                        Vec::new()
+                    }
+                }
             }
 
             #[cfg(not(feature = "debug_unicode"))]
             {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer)?;
-                Some(bincode::deserialize::<HashMap<u32, HashMap<usize, u32>>>(&buffer).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?)
+                match bincode::deserialize::<Vec<(String, HashMap<usize, u32>)>>(&buffer) {
+                    Ok(vec_data) => vec_data,
+                    Err(e) => {
+                        eprintln!("Failed to deserialize binary data: {}", e);
+                        Vec::new()
+                    }
+                }
             }
         };
 
-        Ok(MergingIterator { next_data })
+        Ok(MergingIterator { data, position: 0 })
     }
-    fn next(&mut self) -> Option<HashMap<u32, HashMap<usize, u32>>> {
-        self.next_data.take()
+
+    fn next(&mut self) -> Option<(String, HashMap<usize, u32>)> {
+        if self.position < self.data.len() {
+            let result = self.data[self.position].clone();
+            self.position += 1;
+            Some(result)
+        } else {
+            None
+        }
     }
 }
-
 
 struct ReverseOrdered {
-    value: HashMap<u32, HashMap<usize, u32>>,
+    value: (String, HashMap<usize, u32>),
     idx: usize,
 }
+
 
 impl PartialEq for ReverseOrdered {
     fn eq(&self, other: &Self) -> bool {
@@ -49,9 +68,7 @@ impl Eq for ReverseOrdered {}
 
 impl Ord for ReverseOrdered {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let self_key = *self.value.keys().next().unwrap_or(&0);
-        let other_key = *other.value.keys().next().unwrap_or(&0);
-        other_key.cmp(&self_key).then_with(|| self.idx.cmp(&other.idx))
+        other.value.0.cmp(&self.value.0).then_with(|| self.idx.cmp(&other.idx))
     }
 }
 

@@ -58,19 +58,17 @@ pub fn process_gzip_file(file_path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
-    // Create a vector of mutable references to the postings entries
-    let mut sorted_postings: Vec<_> = postings.iter().collect();
+pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>, term_id_map: &BiMap<String, u32>) {
+    // Create a vector of term_string, postings_list pairs
+    let mut postings_with_terms: Vec<_> = postings.iter()
+        .filter_map(|(&token_id, postings_list)| {
+            term_id_map.get_by_right(&token_id).map(|term_string| (term_string.clone(), postings_list.clone()))
+        })
+        .collect();
 
-    // Sort the vector based on token_ID
-    sorted_postings.sort_by_key(|&(token_id, _)| *token_id);
+    // Sort the vector based on term_string
+    postings_with_terms.sort_by_key(|(term_string, _)| term_string.clone());
 
-    // Debug information
-    println!("Postings length: {}", postings.len());
-    for (token_id, _) in sorted_postings.iter().take(10) {
-        println!("{}", token_id);
-    }
-    println!("...");
 
     // Get the current timestamp
     let current_time = Utc::now();
@@ -85,7 +83,7 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
     #[cfg(feature = "debug_unicode")]
     {
         // For debugging: save as a readable JSON file
-        let serialized_data = serde_json::to_string(&sorted_postings).expect("Failed to serialize sorted postings as JSON");
+        let serialized_data = serde_json::to_string(&postings_with_terms).expect("Failed to serialize postings with terms as JSON");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
     }
@@ -93,7 +91,7 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<usize, u32>>) {
     #[cfg(not(feature = "debug_unicode"))]
     {
         // Production: save as binary format
-        let serialized_data = bincode::serialize(&sorted_postings).expect("Failed to serialize sorted postings");
+        let serialized_data = bincode::serialize(&postings_with_terms).expect("Failed to serialize postings with terms");
         let mut file = File::create(&path).expect("Failed to create file");
         file.write_all(&serialized_data).expect("Failed to write to file");
     }
@@ -149,28 +147,6 @@ pub fn write_doc_metadata_to_disk(metadata: &HashMap<usize, (String, u32)>) {
     }
 }
 
-fn load_lexicon_from_disk() -> std::io::Result<BiMap<String, u32>> {
-    // Path where the lexicon is stored
-    let path = Path::new("data").join("lexicon.data");
-
-    #[cfg(feature = "debug_unicode")]
-    {
-        let file = File::open(&path)?;
-        let reader = BufReader::new(file);
-        let data: Vec<(String, u32)> = serde_json::from_reader(reader).expect("Failed to deserialize lexicon from JSON");
-        let bimap: BiMap<String, u32> = data.into_iter().collect();
-        Ok(bimap)
-    }
-
-    #[cfg(not(feature = "debug_unicode"))]
-    {
-        let file = File::open(&path)?;
-        let data: Vec<u8> = file.bytes().filter_map(Result::ok).collect();
-        let terms_with_ids: Vec<(String, u32)> = bincode::deserialize(&data).expect("Failed to deserialize lexicon");
-        let bimap: BiMap<String, u32> = terms_with_ids.into_iter().collect();
-        Ok(bimap)
-    }
-}
 
 pub fn merge_sorted_postings() -> std::io::Result<()> {
     let dir = Path::new("postings_data");

@@ -58,7 +58,7 @@ impl Indexer {
     // This function will write temporary postings to disk and then clear them.
     pub fn dump_postings_to_disk(&mut self) {
         // Send the whole postings HashMap for dumping to disk
-        disk_io::write_to_disk(&self.postings);
+        disk_io::write_to_disk(&self.postings, &self.term_id_map);
 
         // Clear the in-memory postings
         self.postings.clear();
