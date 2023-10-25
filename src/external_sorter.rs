@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 
 struct MergingIterator {
-    data: Vec<(String, HashMap<usize, u32>)>,
+    data: Vec<(String, HashMap<u32, u32>)>,  // Changed usize to u32 here
     position: usize,
 }
 
@@ -15,7 +15,7 @@ impl MergingIterator {
             {
                 let mut reader = BufReader::new(&file);
                 let line = reader.by_ref().lines().next().and_then(|l| l.ok());
-                match serde_json::from_str::<Vec<(String, HashMap<usize, u32>)>>(&line.unwrap_or_default()) {
+                match serde_json::from_str::<Vec<(String, HashMap<u32, u32>)>>(&line.unwrap_or_default()) {  // Changed usize to u32 here
                     Ok(vec_data) => vec_data,
                     Err(e) => {
                         eprintln!("Failed to deserialize data from file: {}", e);
@@ -28,7 +28,7 @@ impl MergingIterator {
             {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer)?;
-                match bincode::deserialize::<Vec<(String, HashMap<usize, u32>)>>(&buffer) {
+                match bincode::deserialize::<Vec<(String, HashMap<u32, u32>)>>(&buffer) {  // Changed usize to u32 here
                     Ok(vec_data) => vec_data,
                     Err(e) => {
                         eprintln!("Failed to deserialize binary data: {}", e);
@@ -41,7 +41,7 @@ impl MergingIterator {
         Ok(MergingIterator { data, position: 0 })
     }
 
-    fn next(&mut self) -> Option<(String, HashMap<usize, u32>)> {
+    fn next(&mut self) -> Option<(String, HashMap<u32, u32>)> {  // Changed usize to u32 here
         if self.position < self.data.len() {
             let result = self.data[self.position].clone();
             self.position += 1;
@@ -53,10 +53,9 @@ impl MergingIterator {
 }
 
 struct ReverseOrdered {
-    value: (String, HashMap<usize, u32>),
+    value: (String, HashMap<u32, u32>),  // Changed usize to u32 here
     idx: usize,
 }
-
 
 impl PartialEq for ReverseOrdered {
     fn eq(&self, other: &Self) -> bool {
@@ -100,7 +99,7 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
     let mut writer = BufWriter::new(output_file);
 
     let mut current_term: Option<String> = None;
-    let mut current_buffer: HashMap<usize, u32> = HashMap::new();
+    let mut current_buffer: HashMap<u32, u32> = HashMap::new();
 
     while let Some(ReverseOrdered { value, idx }) = heap.pop() {
         let (term, postings) = value;
@@ -136,9 +135,9 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
 }
 
 // Helper function to write postings to file
-fn write_posting(writer: &mut BufWriter<File>, posting: (String, HashMap<usize, u32>)) -> std::io::Result<()> {
+fn write_posting(writer: &mut BufWriter<File>, posting: (String, HashMap<u32, u32>)) -> std::io::Result<()> {  // Changed usize to u32 here
     // Sort by doc_ID (although HashMap doesn't guarantee order, it's helpful to do it explicitly)
-    let mut sorted_posting: Vec<(usize, u32)> = posting.1.into_iter().collect();
+    let mut sorted_posting: Vec<(u32, u32)> = posting.1.into_iter().collect();  // Changed usize to u32 here
     sorted_posting.sort_by_key(|&(doc_id, _)| doc_id);
 
     #[cfg(feature = "debug_unicode")]

@@ -4,10 +4,10 @@ use bimap::BiMap;
 
 pub struct Indexer {
     // Temporary postings: (token_ID, {document_ID: frequency})
-    postings: HashMap<u32, HashMap<usize, u32>>,
+    postings: HashMap<u32, HashMap<u32, u32>>,
 
     // Metadata about the documents: (docID, (URL, number_of_terms))
-    doc_metadata: HashMap<usize, (String, u32)>,
+    doc_metadata: HashMap<u32, (String, u32)>,
 
     // Bidirectional mapping from terms to IDs
     term_id_map: BiMap<String, u32>,
@@ -29,7 +29,7 @@ impl Indexer {
         let (doc_id, url, tokens) = crate::parser::parse_document(document);
 
         // Update doc_metadata
-        self.doc_metadata.insert(doc_id.clone(), (url, tokens.len() as u32));
+        self.doc_metadata.insert(doc_id.clone() as u32, (url, tokens.len() as u32));
 
         let mut token_freq = HashMap::new();
         for token in &tokens {
@@ -49,7 +49,7 @@ impl Indexer {
 
             let doc_freq = self.postings.entry(term_id)
                 .or_insert_with(HashMap::new)
-                .entry(doc_id.clone())
+                .entry(doc_id.clone() as u32)
                 .or_insert(0);
             *doc_freq += freq;
         }

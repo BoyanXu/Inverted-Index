@@ -22,14 +22,14 @@ fn cleanup_postings_data_folder() -> std::io::Result<()> {
 
 fn main() {
 
-    if let Err(e) = cleanup_postings_data_folder() {
-        eprintln!("Error cleaning up postings_data folder: {}", e);
-    }
-
-    let file_path = "data/msmarco-docs.trec.gz";
-    if let Err(e) = process_gzip_file(file_path) {
-        eprintln!("Error processing file: {}", e);
-    }
+    // if let Err(e) = cleanup_postings_data_folder() {
+    //     eprintln!("Error cleaning up postings_data folder: {}", e);
+    // }
+    //
+    // let file_path = "data/msmarco-docs.trec.gz";
+    // if let Err(e) = process_gzip_file(file_path) {
+    //     eprintln!("Error processing file: {}", e);
+    // }
 
     // After processing the file, apply the external merge sort on the batches
     if let Err(e) = merge_sorted_postings() {
@@ -43,9 +43,9 @@ fn main() {
     }
 
     // Query processor
-    let term = "affiliated";
-    if let Err(e) = query_processor::query_term(term, "data/bin_index.data", "data/bin_lexicon.data",
-                                                "data/bin_directory.data") {
-        eprintln!("Error querying term: {}", e);
-    }
+    // let term = "affective";
+    // if let Err(e) = query_processor::query_term(term, "data/bin_index.data", "data/bin_lexicon.data",
+    //                                             "data/bin_directory.data") {
+    //     eprintln!("Error querying term: {}", e);
+    // }
 }
