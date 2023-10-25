@@ -4,7 +4,7 @@ extern crate stream_vbyte;
 extern crate byteorder;
 
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write, Seek, SeekFrom, BufRead};
+use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
 use serde_json::Value;
 
@@ -12,10 +12,10 @@ use stream_vbyte::{
     encode::encode,
     scalar::Scalar
 };
+use crate::utils::DIRECTORY_NTH_TERM;
 
 
 const BLOCK_SIZE: usize = 64;
-const DIRECTORY_NTH_TERM: u32 = 100;
 
 struct TermMetadata {
     term_id: u32,

@@ -43,7 +43,7 @@ fn main() {
     }
 
     // Query processor
-    let term = "affective";
+    let term = "affiliated";
     if let Err(e) = query_processor::query_term(term, "data/bin_index.data", "data/bin_lexicon.data",
                                                 "data/bin_directory.data") {
         eprintln!("Error querying term: {}", e);
