@@ -18,6 +18,7 @@ lazy_static = "1.4.0"
 chrono = { version = "0.4.31", features = [] }
 bimap = "0.6.3"
 stream-vbyte = "0.4.1"
+byteorder = "1.4"
 
 [features]
 debug_unicode = []

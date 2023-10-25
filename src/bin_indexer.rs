@@ -1,108 +1,128 @@
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Seek, Read, Write, BufRead};
+extern crate serde;
+extern crate serde_json;
+extern crate stream_vbyte;
+extern crate byteorder;
+
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write, Seek, SeekFrom, BufRead};
+use byteorder::{LittleEndian, WriteBytesExt};
+use serde_json::Value;
+
 use stream_vbyte::{
-    encode::encode as vbyte_encode,
+    encode::encode,
     scalar::Scalar
 };
 
+
 const BLOCK_SIZE: usize = 64;
+const DIRECTORY_NTH_TERM: u32 = 100;
 
-fn delta_encode(postings: &[(usize, u32)]) -> Vec<(usize, u32)> {
-    let mut last_doc_id = 0;
-    let mut delta_encoded: Vec<(usize, u32)> = Vec::new();
-    for (doc_id, freq) in postings {
-        let delta = doc_id - last_doc_id;
-        delta_encoded.push((delta, *freq));
-        last_doc_id = *doc_id;
-    }
-    delta_encoded
+struct TermMetadata {
+    term_id: u32,
+    doc_freq: u32,
+    total_term_freq: u32,
+    pointer: u64,
+    num_blocks: u32,
+    size_last_block: u32,
+    last_doc_id: u32,
+    total_bytes: u64,
+    block_offsets: Vec<u64>,
+    block_maxima: Vec<u32>,
 }
 
-fn compress_block(block: &[(usize, u32)]) -> (Vec<u8>, Vec<u8>, usize) {
-    let (doc_ids_usize, freqs): (Vec<_>, Vec<_>) = block.iter().cloned().unzip();
-    let doc_ids: Vec<u32> = doc_ids_usize.into_iter().map(|x| x as u32).collect();
+pub fn build_bin_index(posting_path: &str, index_path: &str, lexicon_path: &str, directory_path: &str) -> std::io::Result<()> {
+    let file = File::open(posting_path)?;
+    let reader = BufReader::new(file);
 
-    let mut compressed_doc_ids = vec![0; 5 * doc_ids.len()];
-    let encoded_len_docs = vbyte_encode::<Scalar>(&doc_ids, &mut compressed_doc_ids);
-    compressed_doc_ids.truncate(encoded_len_docs);
+    let mut index_file = BufWriter::new(File::create(index_path)?);
+    let mut lexicon_file = BufWriter::new(File::create(lexicon_path)?);
+    let mut directory_file = BufWriter::new(File::create(directory_path)?);
 
-    let mut compressed_freqs = vec![0; 5 * freqs.len()];
-    let encoded_len_freqs = vbyte_encode::<Scalar>(&freqs, &mut compressed_freqs);
-    compressed_freqs.truncate(encoded_len_freqs);
+    directory_file.write_u32::<LittleEndian>(0)?;
 
-    let last_doc_id = *doc_ids.last().unwrap_or(&0);
-    (compressed_doc_ids, compressed_freqs, last_doc_id as usize)
-}
+    let mut total_terms = 0;
+    for line in reader.lines() {
+        let line = line?;
+        total_terms += 1;
 
-fn write_term_to_index(term: &str, delta_encoded: &[(usize, u32)], writer: &mut BufWriter<File>, lexicon_writer: &mut BufWriter<File>) -> std::io::Result<()> {
-    let offset = writer.stream_position()?;
-    lexicon_writer.write_all(format!("{}\t{}\n", term, offset).as_bytes())?;
+        let data: Value = serde_json::from_str(&line)?;
+        let term = data[0].as_str().unwrap();
+        let postings: Vec<(u32, u32)> = data[1].as_array().unwrap().iter().map(|x| {
+            let docid = x[0].as_u64().unwrap() as u32;
+            let freq = x[1].as_u64().unwrap() as u32;
+            (docid, freq)
+        }).collect();
 
-    let num_blocks = (delta_encoded.len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    let mut last_doc_ids = Vec::<u32>::new();
-    let mut doc_block_sizes = Vec::with_capacity(num_blocks);
-    let mut freq_block_sizes = Vec::with_capacity(num_blocks);
+        // Compress docIDs
+        let docids: Vec<u32> = postings.iter().map(|&(docid, _)| docid).collect();
+        let mut compressed_docids = vec![0u8; 5 * docids.len() + docids.len() / 4]; // Worst case scenario
+        let bytes_written = encode::<Scalar>(&docids, &mut compressed_docids);
+        compressed_docids.truncate(bytes_written); // Truncate to actual size
 
-    for block in delta_encoded.chunks(BLOCK_SIZE) {
-        let (compressed_doc_ids, compressed_freqs, last_doc_id) = compress_block(block);
-        last_doc_ids.push(last_doc_id as u32);
-        doc_block_sizes.push(compressed_doc_ids.len() as u32);
-        freq_block_sizes.push(compressed_freqs.len() as u32);
+        // Write to index file
+        index_file.write_all(&compressed_docids)?;
 
-        let metadata = [&last_doc_ids[..], &doc_block_sizes[..], &freq_block_sizes[..]];
-        let mut compressed_metadata = vec![0; 5 * metadata.len()];
-        let encoded_len_metadata = vbyte_encode::<Scalar>(&metadata.concat(), &mut compressed_metadata);
-        compressed_metadata.truncate(encoded_len_metadata);
+        // Write frequencies
+        for &(_, freq) in &postings {
+            index_file.write_u32::<LittleEndian>(freq)?;
+        }
 
-        writer.write_all(&compressed_metadata)?;
-        writer.write_all(&compressed_doc_ids)?;
-        writer.write_all(&compressed_freqs)?;
-    }
+        // Construct TermMetadata
+        let mut metadata = TermMetadata {
+            term_id: total_terms,
+            doc_freq: postings.len() as u32,
+            total_term_freq: postings.iter().map(|&(_, freq)| freq).sum(),
+            pointer: index_file.stream_position()?,
+            num_blocks: (postings.len() as f32 / BLOCK_SIZE as f32).ceil() as u32,
+            size_last_block: (postings.len() % BLOCK_SIZE) as u32,
+            last_doc_id: postings.last().unwrap().0,
+            total_bytes: compressed_docids.len() as u64,
+            block_offsets: Vec::new(),
+            block_maxima: Vec::new(),
+        };
 
-    Ok(())
-}
-
-#[cfg(feature = "debug_unicode")]
-fn deserialize_from_reader<R: Read, T: serde::de::DeserializeOwned>(reader: &mut R) -> Result<T, Box<dyn std::error::Error>> {
-    use serde_json::from_reader;
-    Ok(from_reader(reader)?)
-}
-
-#[cfg(not(feature = "debug_unicode"))]
-fn deserialize_from_reader<R: Read, T: serde::de::DeserializeOwned>(reader: &mut R) -> Result<T, Box<dyn std::error::Error>> {
-    use bincode::deserialize_from;
-    Ok(deserialize_from(reader)?)
-}
-
-pub fn build_binary_inverted_index(input_file: &str, output_file: &str, lexicon_file: &str) -> std::io::Result<()> {
-    let input = File::open(input_file)?;
-    let mut reader = BufReader::new(input);
-
-    let output = OpenOptions::new().create(true).write(true).truncate(true).open(output_file)?;
-    let mut writer = BufWriter::new(output);
-
-    let lexicon = OpenOptions::new().create(true).write(true).truncate(true).open(lexicon_file)?;
-    let mut lexicon_writer = BufWriter::new(lexicon);
-
-    #[cfg(feature = "debug_unicode")]
-    {
-        let mut buffer = String::new();
-        while reader.read_line(&mut buffer)? > 0 {
-            if let Ok((term, postings)) = serde_json::from_str::<(String, Vec<(usize, u32)>)>(&buffer) {
-                let delta_encoded = delta_encode(&postings);
-                write_term_to_index(&term, &delta_encoded, &mut writer, &mut lexicon_writer)?;
+        // Calculate block maxima and offsets
+        for (i, posting) in postings.iter().enumerate() {
+            if i % BLOCK_SIZE == 0 {
+                metadata.block_offsets.push(index_file.stream_position()?);
             }
-            buffer.clear();
+            if (i + 1) % BLOCK_SIZE == 0 || i + 1 == postings.len() {
+                metadata.block_maxima.push(posting.0);
+            }
+        }
+
+        // Write metadata to lexicon
+        // Write the length of the term first
+        lexicon_file.write_u32::<LittleEndian>(term.len() as u32)?;
+        // Then write the term string
+        lexicon_file.write_all(term.as_bytes())?;
+        lexicon_file.write_u32::<LittleEndian>(metadata.term_id)?;
+        lexicon_file.write_u32::<LittleEndian>(metadata.doc_freq)?;
+        lexicon_file.write_u32::<LittleEndian>(metadata.total_term_freq)?;
+        lexicon_file.write_u64::<LittleEndian>(metadata.pointer)?;
+        lexicon_file.write_u32::<LittleEndian>(metadata.num_blocks)?;
+        lexicon_file.write_u32::<LittleEndian>(metadata.size_last_block)?;
+        lexicon_file.write_u32::<LittleEndian>(metadata.last_doc_id)?;
+        lexicon_file.write_u64::<LittleEndian>(metadata.total_bytes)?;
+        for &offset in &metadata.block_offsets {
+            lexicon_file.write_u64::<LittleEndian>(offset)?;
+        }
+        for &max in &metadata.block_maxima {
+            lexicon_file.write_u32::<LittleEndian>(max)?;
+        }
+
+        // Directory entry
+        if total_terms % DIRECTORY_NTH_TERM == 0 {
+            // Write the length of the term first
+            directory_file.write_u32::<LittleEndian>(term.len() as u32)?;
+            // Then write the term string
+            directory_file.write_all(term.as_bytes())?;
+            directory_file.write_u64::<LittleEndian>(lexicon_file.stream_position()?)?;
         }
     }
 
-    #[cfg(not(feature = "debug_unicode"))]
-    {
-        while let Ok((term, postings)) = bincode::deserialize_from::<_, (String, Vec<(usize, u32)>)>(&mut reader) {
-            let delta_encoded = delta_encode(&postings);
-            write_term_to_index(&term, &delta_encoded, &mut writer, &mut lexicon_writer)?;
-        }
-    }
+    directory_file.seek(SeekFrom::Start(0))?;
+    directory_file.write_u32::<LittleEndian>(total_terms)?;
 
     Ok(())
 }

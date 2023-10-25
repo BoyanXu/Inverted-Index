@@ -4,12 +4,12 @@ mod utils;
 mod disk_io;
 mod external_sorter;
 mod bin_indexer;
+mod query_processor;
 
 use std::fs;
 use std::path::Path;
-use disk_io::process_gzip_file;
-use disk_io::merge_sorted_postings;
-use bin_indexer::build_binary_inverted_index;
+use disk_io::{process_gzip_file, merge_sorted_postings};
+use bin_indexer::build_bin_index;
 
 // Function to clean up the postings_data folder
 fn cleanup_postings_data_folder() -> std::io::Result<()> {
@@ -37,9 +37,15 @@ fn main() {
     }
 
     // Build binary inverted index and store in 'data/' directory
-    if let Err(e) = build_binary_inverted_index("data/merged_postings.data",
-                                                "data/bin_index.data", "data/bin_lexicon.data") {
+    if let Err(e) = build_bin_index("data/merged_postings.data", "data/bin_index.data",
+                                            "data/bin_lexicon.data", "data/bin_directory.data") {
         eprintln!("Error building binary inverted index: {}", e);
     }
 
+    // Query processor
+    let term = "affective";
+    if let Err(e) = query_processor::query_term(term, "data/bin_index.data", "data/bin_lexicon.data",
+                                                "data/bin_directory.data") {
+        eprintln!("Error querying term: {}", e);
+    }
 }
