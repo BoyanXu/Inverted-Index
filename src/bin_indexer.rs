@@ -63,18 +63,30 @@ pub fn build_bin_index(posting_path: &str, index_path: &str, lexicon_path: &str,
 
     #[cfg(not(feature = "debug_unicode"))]
     {
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-        match bincode::deserialize::<Vec<(String, Vec<(u32, u32)>)>>(&buffer) {
+        let mut reader = BufReader::new(file);
 
-            Ok(vec_data) => {
-                for (term, postings) in vec_data {
+        loop {
+            // Read the length of the serialized tuple
+            let mut length_buffer = [0u8; 8];
+            if reader.read_exact(&mut length_buffer).is_err() {
+                break; // Exit loop if we reach the end of the file or encounter any error
+            }
+
+            let length = u64::from_le_bytes(length_buffer);
+
+            let mut buffer = vec![0u8; length as usize];
+            if reader.read_exact(&mut buffer).is_err() {
+                break; // Exit loop if we can't read the full serialized tuple or encounter any error
+            }
+
+            match bincode::deserialize::<(String, Vec<(u32, u32)>)>(&buffer) {
+                Ok((term, postings)) => {
                     total_terms += 1;
                     process_postings(&mut index_file, &mut lexicon_file, &mut directory_file, &term, postings, &mut total_terms)?;
+                },
+                Err(e) => {
+                    eprintln!("(bin indexer) Failed to deserialize binary data: {}", e);
                 }
-            },
-            Err(e) => {
-                eprintln!("Failed to deserialize binary data: {}", e);
             }
         }
     }

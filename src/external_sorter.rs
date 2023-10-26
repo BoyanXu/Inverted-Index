@@ -4,50 +4,48 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 
 struct MergingIterator {
-    data: Vec<(String, HashMap<u32, u32>)>,  // Changed usize to u32 here
-    position: usize,
+    reader: BufReader<File>,
 }
 
 impl MergingIterator {
-    fn new(mut file: File) -> std::io::Result<Self> {
-        let data = {
-            #[cfg(feature = "debug_unicode")]
-            {
-                let mut reader = BufReader::new(&file);
-                let line = reader.by_ref().lines().next().and_then(|l| l.ok());
-                match serde_json::from_str::<Vec<(String, HashMap<u32, u32>)>>(&line.unwrap_or_default()) {  // Changed usize to u32 here
-                    Ok(vec_data) => vec_data,
-                    Err(e) => {
-                        eprintln!("Failed to deserialize data from file: {}", e);
-                        Vec::new()
-                    }
-                }
-            }
-
-            #[cfg(not(feature = "debug_unicode"))]
-            {
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)?;
-                match bincode::deserialize::<Vec<(String, HashMap<u32, u32>)>>(&buffer) {  // Changed usize to u32 here
-                    Ok(vec_data) => vec_data,
-                    Err(e) => {
-                        eprintln!("Failed to deserialize binary data: {}", e);
-                        Vec::new()
-                    }
-                }
-            }
-        };
-
-        Ok(MergingIterator { data, position: 0 })
+    fn new(file: File) -> std::io::Result<Self> {
+        Ok(MergingIterator { reader: BufReader::new(file) })
     }
 
-    fn next(&mut self) -> Option<(String, HashMap<u32, u32>)> {  // Changed usize to u32 here
-        if self.position < self.data.len() {
-            let result = self.data[self.position].clone();
-            self.position += 1;
-            Some(result)
-        } else {
-            None
+    fn next(&mut self) -> Option<(String, HashMap<u32, u32>)> {
+        #[cfg(feature = "debug_unicode")]
+        {
+            let line = self.reader.by_ref().lines().next()?.ok()?;
+            match serde_json::from_str::<(String, HashMap<u32, u32>)>(&line) {
+                Ok(data) => Some(data),
+                Err(e) => {
+                    eprintln!("Failed to deserialize data from line: {}", e);
+                    None
+                }
+            }
+        }
+
+        #[cfg(not(feature = "debug_unicode"))]
+        {
+            // Read the length of the serialized tuple
+            let mut length_buffer = [0u8; 8];
+            if self.reader.read_exact(&mut length_buffer).is_err() {
+                return None;
+            }
+            let length = u64::from_le_bytes(length_buffer);
+
+            let mut buffer = vec![0u8; length as usize];
+            if self.reader.read_exact(&mut buffer).is_err() {
+                return None;
+            }
+
+            match bincode::deserialize::<(String, HashMap<u32, u32>)>(&buffer) {
+                Ok(data) => Some(data),
+                Err(e) => {
+                    eprintln!("(external sorter) Failed to deserialize binary data: {}", e);
+                    None
+                }
+            }
         }
     }
 }
@@ -135,13 +133,14 @@ pub fn merge_sorted_files(output_file_path: &str, input_files: Vec<PathBuf>) -> 
 }
 
 // Helper function to write postings to file
-fn write_posting(writer: &mut BufWriter<File>, posting: (String, HashMap<u32, u32>)) -> std::io::Result<()> {  // Changed usize to u32 here
+fn write_posting(writer: &mut BufWriter<File>, posting: (String, HashMap<u32, u32>)) -> std::io::Result<()> {
     // Sort by doc_ID (although HashMap doesn't guarantee order, it's helpful to do it explicitly)
-    let mut sorted_posting: Vec<(u32, u32)> = posting.1.into_iter().collect();  // Changed usize to u32 here
+    let mut sorted_posting: Vec<(u32, u32)> = posting.1.into_iter().collect();
     sorted_posting.sort_by_key(|&(doc_id, _)| doc_id);
 
     #[cfg(feature = "debug_unicode")]
     {
+        // Serialize to JSON and write to file with a newline
         let serialized_data = serde_json::to_string(&(posting.0, sorted_posting))?;
         writer.write_all(serialized_data.as_bytes())?;
         writer.write_all(b"\n")?;
@@ -149,8 +148,12 @@ fn write_posting(writer: &mut BufWriter<File>, posting: (String, HashMap<u32, u3
 
     #[cfg(not(feature = "debug_unicode"))]
     {
+        // Serialize to binary, prepend with length, then write both to file
         let serialized_data = bincode::serialize(&(posting.0, sorted_posting))
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+        // Write the length of serialized data first
+        writer.write_all(&(serialized_data.len() as u64).to_le_bytes())?;
         writer.write_all(&serialized_data)?;
     }
 

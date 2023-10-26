@@ -76,7 +76,6 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<u32, u32>>, term_id_map: &B
     // Sort the vector based on term_string
     postings_with_terms.sort_by_key(|(term_string, _)| term_string.clone());
 
-
     // Get the current timestamp
     let current_time = Utc::now();
     let filename = format!("postings_{}.data", current_time.format("%Y%m%d%H%M%S%f"));
@@ -89,20 +88,29 @@ pub fn write_to_disk(postings: &HashMap<u32, HashMap<u32, u32>>, term_id_map: &B
 
     #[cfg(feature = "debug_unicode")]
     {
-        // For debugging: save as a readable JSON file
-        let serialized_data = serde_json::to_string(&postings_with_terms).expect("Failed to serialize postings with terms as JSON");
+        // For debugging: save as a readable JSON file, one line per tuple
         let mut file = File::create(&path).expect("Failed to create file");
-        file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
+        for entry in &postings_with_terms {
+            let serialized_data = serde_json::to_string(entry).expect("Failed to serialize posting with term as JSON");
+            file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
+            file.write_all(b"\n").expect("Failed to write newline");
+        }
     }
 
     #[cfg(not(feature = "debug_unicode"))]
     {
-        // Production: save as binary format
-        let serialized_data = bincode::serialize(&postings_with_terms).expect("Failed to serialize postings with terms");
+        // Production: save as binary format, one tuple at a time
         let mut file = File::create(&path).expect("Failed to create file");
-        file.write_all(&serialized_data).expect("Failed to write to file");
+        for entry in &postings_with_terms {
+            let serialized_data = bincode::serialize(entry).expect("Failed to serialize posting with term");
+
+            // Write the length of serialized data first
+            file.write_all(&(serialized_data.len() as u64).to_le_bytes()).expect("Failed to write data length");
+            file.write_all(&serialized_data).expect("Failed to write to file");
+        }
     }
 }
+
 
 
 pub fn write_lexicon_to_disk(lexicon: &BiMap<String, u32>) {
