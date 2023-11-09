@@ -55,21 +55,23 @@ impl Indexer {
         }
     }
 
-    // This function will write temporary postings to disk and then clear them.
+    // We dump postings multiple times to disk and clear them in memory everytime
     pub fn dump_postings_to_disk(&mut self) {
         // Send the whole postings HashMap for dumping to disk
-        disk_io::write_to_disk(&self.postings, &self.term_id_map);
+        disk_io::write_posting_to_disk(&self.postings, &self.term_id_map);
 
         // Clear the in-memory postings
         self.postings.clear();
     }
 
+    // We dump lexicon only once to disk
     pub fn dump_lexicon_to_disk(&self) {
         // Convert BiMap to a standard HashMap for disk storage
         disk_io::write_lexicon_to_disk(&self.term_id_map);
 
     }
 
+    // We dump doc metadata only once to disk
     pub fn dump_doc_metadata_to_disk(&self) {
         disk_io::write_doc_metadata_to_disk(&self.doc_metadata);
     }

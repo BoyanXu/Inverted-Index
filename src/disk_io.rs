@@ -65,7 +65,7 @@ pub fn process_gzip_file(file_path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn write_to_disk(postings: &HashMap<u32, HashMap<u32, u32>>, term_id_map: &BiMap<String, u32>) {
+pub fn write_posting_to_disk(postings: &HashMap<u32, HashMap<u32, u32>>, term_id_map: &BiMap<String, u32>) {
     // Create a vector of term_string, postings_list pairs
     let mut postings_with_terms: Vec<_> = postings.iter()
         .filter_map(|(&token_id, postings_list)| {

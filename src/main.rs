@@ -22,6 +22,8 @@ fn cleanup_postings_data_folder() -> std::io::Result<()> {
 
 fn main() {
 
+    // /* Assignment 2: Build the Inverted Index
+
     if let Err(e) = cleanup_postings_data_folder() {
         eprintln!("Error cleaning up postings_data folder: {}", e);
     }
@@ -42,8 +44,9 @@ fn main() {
         eprintln!("Error building binary inverted index: {}", e);
     }
 
+    // */
     // Query processor
-    let term = "kilogramm";
+    let term = "cat";
     if let Err(e) = query_processor::query_term(term, "data/bin_index.data", "data/bin_lexicon.data",
                                                 "data/bin_directory.data") {
         eprintln!("Error querying term: {}", e);
