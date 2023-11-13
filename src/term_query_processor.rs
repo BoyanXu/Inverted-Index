@@ -11,23 +11,24 @@ use crate::bin_indexer::TermMetadata;
 
 const BLOCK_SIZE: usize = 64;
 
-pub(crate) fn query_term(term: &str, index_path: &str, lexicon_path: &str, directory_path: &str) -> Result<Vec<(u32, u32)>, std::io::Error> {
+pub(crate) fn query_term_postings(term: &str, index_path: &str, lexicon_path: &str, directory_path: &str) -> Result<Vec<(u32, u32)>, std::io::Error> {
     let mut directory_file = BufReader::new(File::open(directory_path)?);
-    let lexicon_position = search_directory(&mut directory_file, term)?;
-
     let mut lexicon_file = BufReader::new(File::open(lexicon_path)?);
+    let mut index_file = BufReader::new(File::open(index_path)?);
+
+    let lexicon_position = query_term_directory(&mut directory_file, term)?;
+
     lexicon_file.seek(SeekFrom::Start(lexicon_position))?;
 
-    let term_metadata = search_lexicon(&mut lexicon_file, term)?;
+    let term_metadata = query_term_lexicon(&mut lexicon_file, term)?;
 
-    let mut index_file = BufReader::new(File::open(index_path)?);
-    let postings = search_index(&mut index_file, &term_metadata)?;
+    let postings = query_term_index(&mut index_file, &term_metadata)?;
 
     Ok(postings)
 }
 
 
-pub(crate) fn search_directory(directory_file: &mut BufReader<File>, term: &str) -> Result<u64, std::io::Error> {
+fn query_term_directory(directory_file: &mut BufReader<File>, term: &str) -> Result<u64, std::io::Error> {
     let total_dirs = directory_file.read_u32::<LittleEndian>()?;
 
     let mut lexicon_position = 0;
@@ -50,9 +51,9 @@ pub(crate) fn search_directory(directory_file: &mut BufReader<File>, term: &str)
     Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Term not found in directory"))
 }
 
-pub(crate) fn search_lexicon(
+fn query_term_lexicon(
     lexicon_file: &mut BufReader<File>,
-    term: &str
+    term: &str,
 ) -> Result<TermMetadata, std::io::Error> {
     loop {
         // Read the length of the term first
@@ -110,8 +111,7 @@ pub(crate) fn search_lexicon(
     }
 }
 
-
-fn search_index(
+fn query_term_index(
     index_file: &mut BufReader<File>,
     term_metadata: &TermMetadata,
 ) -> std::io::Result<Vec<(u32, u32)>> {

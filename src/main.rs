@@ -4,7 +4,8 @@ mod utils;
 mod disk_io;
 mod external_sorter;
 mod bin_indexer;
-mod query_processor;
+mod term_query_processor;
+mod sentence_query_processor;
 
 use std::fs;
 use std::path::Path;
@@ -22,7 +23,7 @@ fn cleanup_postings_data_folder() -> std::io::Result<()> {
 
 fn main() {
 
-    // /* Assignment 2: Build the Inverted Index
+    /* Assignment 2: Build the Inverted Index
 
     if let Err(e) = cleanup_postings_data_folder() {
         eprintln!("Error cleaning up postings_data folder: {}", e);
@@ -44,11 +45,17 @@ fn main() {
         eprintln!("Error building binary inverted index: {}", e);
     }
 
-    // */
+    */
+
     // Query processor
-    let term = "cat";
-    if let Err(e) = query_processor::query_term(term, "data/bin_index.data", "data/bin_lexicon.data",
-                                                "data/bin_directory.data") {
-        eprintln!("Error querying term: {}", e);
+    let term = "box";
+    match term_query_processor::query_term_postings(term, "data/bin_index.data", "data/bin_lexicon.data",
+                                                    "data/bin_directory.data")  {
+        Ok(postings) => {
+            println!("Postings for term '{}': {:?}", term, postings);
+        },
+        Err(e) => {
+            eprintln!("Error querying term: {}", e);
+        }
     }
 }
