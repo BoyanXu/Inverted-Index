@@ -106,7 +106,7 @@ impl TermQueryProcessor {
                     num_blocks,
                     num_posting_in_last_block,
                     last_doc_id,
-                    compressed_docids_sizes_per_block,
+                    compressed_docids_per_block: compressed_docids_sizes_per_block,
                     block_offsets,
                     block_maxima,
                 });
@@ -121,9 +121,10 @@ impl TermQueryProcessor {
 
         let mut postings = Vec::with_capacity(term_metadata.doc_freq as usize);
 
-        for (i, &compressed_size) in term_metadata.compressed_docids_sizes_per_block.iter().enumerate() {
+        // For each block
+        for (i, &compressed_size) in term_metadata.compressed_docids_per_block.iter().enumerate() {
             // Determine the number of docids in this block
-            let block_size = if i == term_metadata.compressed_docids_sizes_per_block.len() - 1 {
+            let block_size = if i == term_metadata.compressed_docids_per_block.len() - 1 {
                 term_metadata.num_posting_in_last_block as usize
             } else {
                 BLOCK_SIZE
@@ -147,5 +148,53 @@ impl TermQueryProcessor {
         }
         Ok(postings)
     }
+
+    pub fn query_term_postings_after_doc_k(&mut self, term: &str, k: u32) -> std::io::Result<Vec<(u32, u32)>> {
+        let term_metadata = self.query_term_metadata(term)?;
+
+        let mut postings = Vec::new();
+
+        // Iterate through the blocks to find the starting block
+        for (i, &max_docid) in term_metadata.block_maxima.iter().enumerate() {
+            if max_docid < k {
+                continue; // Skip blocks where max_docid is less than k
+            }
+
+            // Start processing from this block
+            for (block_index, &offset) in term_metadata.block_offsets.iter().enumerate().skip(i) {
+                // Seek to the start of the block
+                self.index_file.seek(SeekFrom::Start(offset))?;
+
+                // Determine the number of docids in this block
+                let block_size = if block_index == term_metadata.compressed_docids_per_block.len() - 1 {
+                    term_metadata.num_posting_in_last_block as usize
+                } else {
+                    BLOCK_SIZE
+                };
+
+                // Read and decompress docids for this block
+                let compressed_size = term_metadata.compressed_docids_per_block[block_index];
+                let mut compressed_docids = vec![0u8; compressed_size as usize];
+                self.index_file.read_exact(&mut compressed_docids)?;
+
+                let mut docids = vec![0u32; block_size];
+                decode::<Scalar>(&compressed_docids, block_size, &mut docids);
+
+                // Read frequencies for this block
+                let mut frequencies = vec![0u32; block_size];
+                for freq in &mut frequencies {
+                    *freq = self.index_file.read_u32::<LittleEndian>()?;
+                }
+
+                // Combine docids and frequencies into postings
+                postings.extend(docids.into_iter().zip(frequencies.into_iter()).filter(|&(docid, _)| docid >= k));
+            }
+            break; // Break after processing the required blocks
+        }
+
+        Ok(postings)
+    }
+
+    pub fn conjunctive_query
 
 }

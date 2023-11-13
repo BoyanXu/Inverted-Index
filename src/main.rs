@@ -5,7 +5,6 @@ mod disk_io;
 mod external_sorter;
 mod bin_indexer;
 mod term_query_processor;
-mod ranked_query_processor;
 
 use std::fs;
 use std::path::Path;
@@ -53,6 +52,15 @@ fn main() {
     let mut tqp = TermQueryProcessor::new("data/bin_index.data", "data/bin_lexicon.data", "data/bin_directory.data",
                                           "data/doc_metadata.data");
     match tqp.query_term_all_postings(term) {
+        Ok(postings) => {
+            println!("Postings for term '{}': {:?}", term, postings);
+        },
+        Err(e) => {
+            eprintln!("Error querying term: {}", e);
+        }
+    }
+
+    match tqp.query_term_postings_after_doc_k(term, 700) {
         Ok(postings) => {
             println!("Postings for term '{}': {:?}", term, postings);
         },

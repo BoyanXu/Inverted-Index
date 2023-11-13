@@ -27,7 +27,7 @@ pub struct TermMetadata {
     pub(crate) num_blocks: u32,
     pub(crate) num_posting_in_last_block: u32,
     pub(crate) last_doc_id: u32,
-    pub(crate) compressed_docids_sizes_per_block: Vec<u64>,
+    pub(crate) compressed_docids_per_block: Vec<u64>,
     pub(crate) block_offsets: Vec<u64>,
     pub(crate) block_maxima: Vec<u32>,
 }
@@ -125,7 +125,7 @@ fn process_postings(
         num_blocks: (postings.len() as f32 / BLOCK_SIZE as f32).ceil() as u32,
         num_posting_in_last_block: (postings.len() % BLOCK_SIZE) as u32,
         last_doc_id: postings.last().unwrap().0,
-        compressed_docids_sizes_per_block: Vec::new(),
+        compressed_docids_per_block: Vec::new(),
         block_offsets: Vec::new(),
         block_maxima: Vec::new(),
     };
@@ -145,7 +145,7 @@ fn process_postings(
         compressed_docids.truncate(bytes_written);
         index_file.write_all(&compressed_docids)?;
 
-        metadata.compressed_docids_sizes_per_block.push(bytes_written as u64);
+        metadata.compressed_docids_per_block.push(bytes_written as u64);
 
         // Write frequencies for the block
         for &freq in &block_freqs {
@@ -164,7 +164,7 @@ fn process_postings(
     lexicon_file.write_u32::<LittleEndian>(metadata.num_blocks)?;
     lexicon_file.write_u32::<LittleEndian>(metadata.num_posting_in_last_block)?;
     lexicon_file.write_u32::<LittleEndian>(metadata.last_doc_id)?;
-    for &size in &metadata.compressed_docids_sizes_per_block {
+    for &size in &metadata.compressed_docids_per_block {
         lexicon_file.write_u64::<LittleEndian>(size)?;
     }
     for &offset in &metadata.block_offsets {
