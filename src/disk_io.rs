@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Result, BufRead};
+use std::io::{BufReader, Result, BufRead, Read};
 use flate2::read::GzDecoder;
 use bimap::BiMap;
 use std::io::Write;
@@ -10,6 +10,7 @@ use simplelog::*;
 use log::{info, LevelFilter};
 use crate::external_sorter::merge_sorted_files;
 use std::fs::read_dir;
+use std::io;
 
 #[cfg(feature = "debug_unicode")]
 
@@ -151,24 +152,31 @@ pub fn write_lexicon_to_disk(lexicon: &BiMap<String, u32>) {
     }
 }
 
-pub fn write_doc_metadata_to_disk(metadata: &HashMap<u32, (String, u32)>) {
-    // Path to store the document metadata
+pub fn write_doc_metadata_to_disk(metadata: &HashMap<u32, (String, u32)>) -> io::Result<()> {
     let path = Path::new("data").join("doc_metadata.data");
-    std::fs::create_dir_all(path.parent().unwrap()).expect("Failed to create directory");
+    std::fs::create_dir_all(path.parent().unwrap())?;
+
+    let mut file = File::create(&path)?;
 
     #[cfg(feature = "debug_unicode")]
     {
-        let serialized_data = serde_json::to_string(metadata).expect("Failed to serialize doc_metadata as JSON");
-        let mut file = File::create(&path).expect("Failed to create file");
-        file.write_all(serialized_data.as_bytes()).expect("Failed to write to file");
+        for (&doc_id, (doc_name, doc_length)) in metadata {
+            let serialized_data = serde_json::to_string(&(doc_id, doc_name, doc_length))
+                .expect("Failed to serialize doc_metadata as JSON");
+            writeln!(file, "{}", serialized_data)?;
+        }
     }
 
     #[cfg(not(feature = "debug_unicode"))]
     {
-        let serialized_data = bincode::serialize(metadata).expect("Failed to serialize doc_metadata");
-        let mut file = File::create(&path).expect("Failed to create file");
-        file.write_all(&serialized_data).expect("Failed to write to file");
+        // Binary format (bincode) does not support line-by-line writing.
+        // Write the entire metadata map as a single binary blob.
+        let serialized_data = bincode::serialize(metadata)
+            .expect("Failed to serialize doc_metadata");
+        file.write_all(&serialized_data)?;
     }
+
+    Ok(())
 }
 
 
@@ -186,3 +194,31 @@ pub fn merge_sorted_postings() -> std::io::Result<()> {
     let merged_output_path = output_dir.join("merged_postings.data");
     merge_sorted_files(&merged_output_path.to_string_lossy(), files)
 }
+
+
+pub fn load_doc_metadata(doc_metadata_path: &str) -> Result<HashMap<u32, (String, u32)>> {
+    let path = Path::new(doc_metadata_path);
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    #[cfg(feature = "debug_unicode")]
+    {
+        let mut metadata = HashMap::new();
+        for line in reader.lines() {
+            let line = line?;
+            let tuple: (u32, String, u32) = serde_json::from_str(&line)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            metadata.insert(tuple.0, (tuple.1, tuple.2));
+        }
+        Ok(metadata)
+    }
+
+    #[cfg(not(feature = "debug_unicode"))]
+    {
+        let metadata: HashMap<u32, (String, u32)> = bincode::deserialize_from(reader)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(metadata)
+    }
+}
+
+

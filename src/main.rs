@@ -5,12 +5,13 @@ mod disk_io;
 mod external_sorter;
 mod bin_indexer;
 mod term_query_processor;
-mod sentence_query_processor;
+mod ranked_query_processor;
 
 use std::fs;
 use std::path::Path;
 use disk_io::{process_gzip_file, merge_sorted_postings};
 use bin_indexer::build_bin_index;
+use crate::term_query_processor::TermQueryProcessor;
 
 // Function to clean up the postings_data folder
 fn cleanup_postings_data_folder() -> std::io::Result<()> {
@@ -49,8 +50,9 @@ fn main() {
 
     // Query processor
     let term = "box";
-    match term_query_processor::query_term_postings(term, "data/bin_index.data", "data/bin_lexicon.data",
-                                                    "data/bin_directory.data")  {
+    let mut tqp = TermQueryProcessor::new("data/bin_index.data", "data/bin_lexicon.data", "data/bin_directory.data",
+                                          "data/doc_metadata.data");
+    match tqp.query_term_all_postings(term) {
         Ok(postings) => {
             println!("Postings for term '{}': {:?}", term, postings);
         },
