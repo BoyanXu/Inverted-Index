@@ -11,7 +11,7 @@ pub struct Indexer {
 
     // Bidirectional mapping from terms to IDs
     term_id_map: BiMap<String, u32>,
-    current_term_id: u32,
+    pub current_term_id: u32,
 }
 
 impl Indexer {

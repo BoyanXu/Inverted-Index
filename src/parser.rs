@@ -56,10 +56,12 @@ pub fn parse_line(line: &str) -> Vec<String> {
     // Normalize the text to NFKC (Normalization Form KC: Compatibility Composition)
     let normalized = line.nfkc().collect::<String>();
 
-    // Replace "." and "_" and "-" with whitespace to treat them as delimiters
+    // Replace "." and "_" and "-" and quotation marks with whitespace to treat them as delimiters
     let replaced = normalized.replace(".", " ")
         .replace("_", " ")
-        .replace("-", " ");
+        .replace("-", " ")
+        .replace("\"", " ")
+        .replace("\'", " ");
 
     // Tokenize into words using unicode segmentation
     let words = replaced.unicode_words();

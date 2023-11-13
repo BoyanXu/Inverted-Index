@@ -6,6 +6,8 @@ use bimap::BiMap;
 use std::io::Write;
 use std::path::Path;
 use chrono::Utc;
+use simplelog::*;
+use log::{info, LevelFilter};
 use crate::external_sorter::merge_sorted_files;
 use std::fs::read_dir;
 
@@ -23,6 +25,10 @@ pub fn decompress_gzip_file(file_path: &str) -> Result<Box<dyn BufRead>> {
 }
 
 pub fn process_gzip_file(file_path: &str) -> std::io::Result<()> {
+    // Initialize the logger
+    let log_file = File::create("indexer.log").unwrap();
+    WriteLogger::init(LevelFilter::Info, Config::default(), log_file).unwrap();
+
     let reader = decompress_gzip_file(file_path)?;
     let mut indexer = indexer::Indexer::new();
 
@@ -61,6 +67,9 @@ pub fn process_gzip_file(file_path: &str) -> std::io::Result<()> {
 
     indexer.dump_lexicon_to_disk();
     indexer.dump_doc_metadata_to_disk();
+
+    info!("The number of documents processed: {}", doc_count);
+    info!("The number of all terms: {}", indexer.current_term_id);
 
     Ok(())
 }
