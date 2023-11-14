@@ -246,21 +246,75 @@ impl TermQueryProcessor {
     }
 
     pub fn conjunctive_query(&mut self, query: &str) {
-        println!("Total docs: {}", self.total_docs);
-        println!("Average doc length: {}", self.avg_doc_len);
         let query_terms = tokenize(query);
-        for term in query_terms {
-            println!("Querying term: {}", term);
-            let metadata = self.query_term_metadata(&term).unwrap();
-            println!("Metadata: {:?}", metadata);
-            for (doc_id, freq) in self.query_term_all_postings(&term).unwrap() {
-                let bm25 = self.bm25(freq, metadata.doc_freq, doc_id);
-                println!("doc_id: {}, freq: {}, bm25: {}", doc_id, freq, bm25);
+        let mut term_postings_lengths = HashMap::new();
+        let mut valid_terms = Vec::new();
+
+        for term in &query_terms {
+            match self.query_term_metadata(term) {
+                Ok(metadata) => {
+                    term_postings_lengths.insert(term, metadata.doc_freq);
+                    valid_terms.push(term);
+                },
+                Err(_) => {
+                    println!("Term '{}' not found in lexicon, likely a typo, skipping...", term);
+                }
             }
         }
 
+        if valid_terms.is_empty() {
+            println!("No valid terms found in the query.");
+            return;
+        }
 
+        let shortest_term = term_postings_lengths.iter().min_by_key(|&(_, v)| v).map(|(&k, _)| k).unwrap();
+        let mut shortest_postings: Vec<(u32, f32)> = match self.query_term_all_postings(shortest_term) {
+            Ok(postings) => postings.iter()
+                .map(|&(doc_id, freq)| {
+                    let bm25_score = self.bm25(freq, term_postings_lengths[shortest_term], doc_id);
+                    (doc_id, bm25_score)
+                })
+                .collect(),
+            Err(_) => {
+                println!("Error retrieving postings for term '{}', aborting query.", shortest_term);
+                return;
+            }
+        };
+
+        for term in valid_terms.iter().filter(|&t| t != &shortest_term) {
+            let mut intersected_postings = Vec::new();
+
+            for &(doc_id, mut score) in &shortest_postings {
+                match self.query_term_postings_after_doc_k(term, doc_id) {
+                    Ok(postings) => {
+                        if postings.iter().any(|&(post_doc_id, _)| post_doc_id == doc_id) {
+                            score += postings.iter()
+                                .find(|&&(post_doc_id, _)| post_doc_id == doc_id)
+                                .map(|&(_, post_freq)| self.bm25(post_freq, term_postings_lengths[term], doc_id))
+                                .unwrap_or(0.0);
+                            intersected_postings.push((doc_id, score));
+                        }
+                    },
+                    Err(_) => {
+                        println!("Error retrieving postings after doc {} for term '{}', skipping...", doc_id, term);
+                    }
+                }
+            }
+
+            shortest_postings = intersected_postings;
+        }
+
+        if shortest_postings.is_empty() {
+            println!("No documents match the query.");
+            return;
+        }
+
+        shortest_postings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for (doc_id, score) in shortest_postings {
+            println!("doc_id: {}, doc_url: {}, score: {}", doc_id, self.doc_url(doc_id), score);
+        }
     }
+
 
     pub fn bm25(&mut self, tf: u32, df: u32, doc_id: u32) -> f32 {
 
@@ -273,5 +327,12 @@ impl TermQueryProcessor {
 
         idf * (term_freq_component / denominator)
     }
+
+    pub fn doc_url(&self, doc_id: u32) -> &String {
+        static DEFAULT_URL: String = String::new();
+
+        self.doc_metadata.get(&doc_id).map(|(url, _)| url).unwrap_or(&DEFAULT_URL)
+    }
+
 
 }

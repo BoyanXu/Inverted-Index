@@ -60,14 +60,5 @@ fn main() {
         }
     }
 
-    match tqp.query_term_postings_after_doc_k(term, 700) {
-        Ok(postings) => {
-            println!("Postings for term '{}': {:?}", term, postings);
-        },
-        Err(e) => {
-            eprintln!("Error querying term: {}", e);
-        }
-    }
-
-    tqp.conjunctive_query("developed cool guy");
+    tqp.conjunctive_query("developed cool");
 }
