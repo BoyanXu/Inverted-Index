@@ -19,6 +19,7 @@ use crate::utils::DIRECTORY_NTH_TERM;
 
 const BLOCK_SIZE: usize = 64;
 
+#[derive(Clone, Debug)]
 pub struct TermMetadata {
     pub(crate) term_id: u32,
     pub(crate) doc_freq: u32,

@@ -10,6 +10,7 @@ use stream_vbyte::scalar::Scalar;
 use crate::utils::DIRECTORY_NTH_TERM;
 use crate::bin_indexer::TermMetadata;
 use crate::disk_io::load_doc_metadata;
+use crate::parser::parse_line as tokenize;
 
 const BLOCK_SIZE: usize = 64;
 
@@ -18,6 +19,8 @@ pub struct TermQueryProcessor {
     lexicon_file: BufReader<File>,
     index_file: BufReader<File>,
     doc_metadata: HashMap<u32, (String, u32)>,
+    directory_cache: HashMap<String, u64>,
+    metadata_cache: HashMap<String, TermMetadata>,
 }
 impl TermQueryProcessor {
     pub fn new(index_path: &str, lexicon_path: &str, directory_path: &str, doc_metadata_path: &str) -> Self {
@@ -26,10 +29,17 @@ impl TermQueryProcessor {
             lexicon_file: BufReader::new(File::open(lexicon_path).unwrap()),
             index_file: BufReader::new(File::open(index_path).unwrap()),
             doc_metadata: load_doc_metadata(doc_metadata_path).unwrap(),
+            directory_cache: Default::default(),
+            metadata_cache: Default::default(),
         }
     }
 
     pub fn query_term_directory(&mut self, term: &str) -> Result<u64, std::io::Error> {
+        // Check the cache first
+        if let Some(&position) = self.directory_cache.get(term) {
+            return Ok(position);
+        }
+
         self.directory_file.seek(SeekFrom::Start(0))?; // reset the file pointer to the beginning of the file
         let total_dirs = self.directory_file.read_u32::<LittleEndian>()?;
 
@@ -45,15 +55,33 @@ impl TermQueryProcessor {
             last_lexicon_position = lexicon_position;
             lexicon_position = self.directory_file.read_u64::<LittleEndian>()?;
 
-            if dir_term.as_ref() >= term {
-                return Ok(if dir_term.as_ref() == term { lexicon_position } else { last_lexicon_position });
+            match dir_term.as_ref().cmp(term) {
+                std::cmp::Ordering::Equal => {
+                    // Term matches, update cache with the current lexicon position
+                    self.directory_cache.insert(term.to_string(), lexicon_position);
+                    return Ok(lexicon_position)
+                },
+                std::cmp::Ordering::Greater => {
+                    // Term is greater than the searched term, update cache with the last lexicon position
+                    self.directory_cache.insert(term.to_string(), last_lexicon_position);
+                    return Ok(last_lexicon_position)
+                },
+                std::cmp::Ordering::Less => {
+                    // Continue searching if the directory term is less than the searched term
+                    continue;
+                },
             }
+
         }
 
         Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Term not found in directory"))
     }
 
     pub fn query_term_metadata(&mut self, term: &str) -> Result<TermMetadata, std::io::Error> {
+        // Check the cache first
+        if let Some(metadata) = self.metadata_cache.get(term) {
+            return Ok(metadata.clone()); // Clone the metadata as it's being returned by reference
+        }
 
         let lexicon_directory = self.query_term_directory(term)?;
         self.lexicon_file.seek(SeekFrom::Start(lexicon_directory))?;
@@ -98,7 +126,7 @@ impl TermQueryProcessor {
             }
 
             if lex_term == term {
-                return Ok(TermMetadata {
+                let metadata = TermMetadata {
                     term_id,
                     doc_freq,
                     total_term_freq,
@@ -109,7 +137,13 @@ impl TermQueryProcessor {
                     compressed_docids_per_block: compressed_docids_sizes_per_block,
                     block_offsets,
                     block_maxima,
-                });
+                };
+
+                // Insert the metadata into the cache
+                self.metadata_cache.insert(term.to_string(), metadata.clone());
+
+                // Return the metadata
+                return Ok(metadata);
             }
         }
     }
@@ -195,6 +229,13 @@ impl TermQueryProcessor {
         Ok(postings)
     }
 
-    pub fn conjunctive_query
+    pub fn conjunctive_query(&mut self, query: &str) {
+        let query_terms = tokenize(query);
+        for term in query_terms {
+            println!("Querying term: {}", term);
+            let metadata = self.query_term_metadata(&term).unwrap();
+            println!("Metadata: {:?}", metadata);
+        }
 
+    }
 }

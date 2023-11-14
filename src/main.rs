@@ -68,4 +68,6 @@ fn main() {
             eprintln!("Error querying term: {}", e);
         }
     }
+
+    tqp.conjunctive_query("developed cool guy");
 }
