@@ -246,6 +246,8 @@ impl TermQueryProcessor {
     }
 
     pub fn conjunctive_query(&mut self, query: &str) {
+        println!("=======================================");
+        println!("Conjunctive Query: {}, Top 10 results:", query);
         let query_terms = tokenize(query);
         let mut term_postings_lengths = HashMap::new();
         let mut valid_terms = Vec::new();
@@ -310,11 +312,43 @@ impl TermQueryProcessor {
         }
 
         shortest_postings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        for (doc_id, score) in shortest_postings {
-            println!("doc_id: {}, doc_url: {}, score: {}", doc_id, self.doc_url(doc_id), score);
+        for (doc_id, score) in shortest_postings.iter().take(10) {
+            println!("doc_id: {}, doc_url: {}, score: {}", doc_id, self.doc_url(*doc_id), score);
         }
     }
 
+
+    pub fn disjunctive_query(&mut self, query: &str) {
+        println!("=======================================");
+        println!("Disjunctive Query: {}, Top 10 results:", query);
+
+        let query_terms = tokenize(query);
+        let mut doc_scores: HashMap<u32, f32> = HashMap::new();
+
+        // Retrieve postings lists for each term and calculate scores
+        for term in query_terms {
+            if let Ok(metadata) = self.query_term_metadata(&term) {
+                if let Ok(postings) = self.query_term_all_postings(&term) {
+                    for (doc_id, freq) in postings {
+                        let bm25_score = self.bm25(freq, metadata.doc_freq, doc_id);
+                        doc_scores.entry(doc_id).and_modify(|e| *e += bm25_score).or_insert(bm25_score);
+                    }
+                } else {
+                    println!("No postings found for term: {}", term);
+                }
+            } else {
+                println!("Term not found in metadata: {}", term);
+            }
+        }
+
+        // Sort and output results
+        let mut sorted_docs: Vec<_> = doc_scores.into_iter().collect();
+        sorted_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        for (doc_id, score) in sorted_docs.iter().take(10) {
+            println!("doc_id: {}, doc_url: {}, score: {}", doc_id, self.doc_url(*doc_id), score);
+        }
+    }
 
     pub fn bm25(&mut self, tf: u32, df: u32, doc_id: u32) -> f32 {
 

@@ -48,17 +48,27 @@ fn main() {
     */
 
     // Query processor
-    let term = "box";
+    // let term = "box";
     let mut tqp = TermQueryProcessor::new("data/bin_index.data", "data/bin_lexicon.data", "data/bin_directory.data",
                                           "data/doc_metadata.data");
-    match tqp.query_term_all_postings(term) {
-        Ok(postings) => {
-            println!("Postings for term '{}': {:?}", term, postings);
-        },
-        Err(e) => {
-            eprintln!("Error querying term: {}", e);
-        }
-    }
+    // match tqp.query_term_all_postings(term) {
+    //     Ok(postings) => {
+    //         println!("Postings for term '{}': {:?}", term, postings);
+    //     },
+    //     Err(e) => {
+    //         eprintln!("Error querying term: {}", e);
+    //     }
+    // }
+    //
+    // match tqp.query_term_postings_after_doc_k(term, 10000) {
+    //     Ok(postings) => {
+    //         println!("Postings for term '{}' after k: {:?} ", term, postings);
+    //     },
+    //     Err(e) => {
+    //         eprintln!("Error querying term: {}", e);
+    //     }
+    // }
 
-    tqp.conjunctive_query("developed cool");
+    tqp.conjunctive_query("software engineering books");
+    tqp.disjunctive_query("software engineering books");
 }
