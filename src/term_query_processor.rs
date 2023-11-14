@@ -11,6 +11,7 @@ use crate::utils::DIRECTORY_NTH_TERM;
 use crate::bin_indexer::TermMetadata;
 use crate::disk_io::load_doc_metadata;
 use crate::parser::parse_line as tokenize;
+use crate::utils::{BM25_K1, BM25_B};
 
 const BLOCK_SIZE: usize = 64;
 
@@ -21,16 +22,31 @@ pub struct TermQueryProcessor {
     doc_metadata: HashMap<u32, (String, u32)>,
     directory_cache: HashMap<String, u64>,
     metadata_cache: HashMap<String, TermMetadata>,
+    total_docs: u32,
+    avg_doc_len: u32,
 }
 impl TermQueryProcessor {
     pub fn new(index_path: &str, lexicon_path: &str, directory_path: &str, doc_metadata_path: &str) -> Self {
+        let doc_metadata = load_doc_metadata(doc_metadata_path).unwrap();
+        let total_docs = doc_metadata.keys().max().cloned().unwrap_or(0);
+        let total_length: u32 = doc_metadata.values()
+            .map(|(_, length)| length)
+            .sum();
+        let avg_doc_len = if total_docs > 0 {
+            total_length / total_docs
+        } else {
+            0 // Return 0 if there are no documents
+        };
+
         Self {
             directory_file: BufReader::new(File::open(directory_path).unwrap()),
             lexicon_file: BufReader::new(File::open(lexicon_path).unwrap()),
             index_file: BufReader::new(File::open(index_path).unwrap()),
-            doc_metadata: load_doc_metadata(doc_metadata_path).unwrap(),
+            doc_metadata,
             directory_cache: Default::default(),
             metadata_cache: Default::default(),
+            total_docs,
+            avg_doc_len,
         }
     }
 
@@ -230,12 +246,32 @@ impl TermQueryProcessor {
     }
 
     pub fn conjunctive_query(&mut self, query: &str) {
+        println!("Total docs: {}", self.total_docs);
+        println!("Average doc length: {}", self.avg_doc_len);
         let query_terms = tokenize(query);
         for term in query_terms {
             println!("Querying term: {}", term);
             let metadata = self.query_term_metadata(&term).unwrap();
             println!("Metadata: {:?}", metadata);
+            for (doc_id, freq) in self.query_term_all_postings(&term).unwrap() {
+                let bm25 = self.bm25(freq, metadata.doc_freq, doc_id);
+                println!("doc_id: {}, freq: {}, bm25: {}", doc_id, freq, bm25);
+            }
         }
 
+
     }
+
+    pub fn bm25(&mut self, tf: u32, df: u32, doc_id: u32) -> f32 {
+
+        let k1: f32 = BM25_K1;
+        let b: f32 = BM25_B;
+        let doc_len = self.doc_metadata.get(&doc_id).unwrap().1;
+        let idf = ((self.total_docs as f32 - df as f32 + 0.5) / (df as f32 + 0.5)).ln() + 1.0;
+        let term_freq_component = (tf as f32) * (k1 + 1.0);
+        let denominator = tf as f32 + k1 * (1.0 - b + b * (doc_len as f32 / self.avg_doc_len as f32));
+
+        idf * (term_freq_component / denominator)
+    }
+
 }
