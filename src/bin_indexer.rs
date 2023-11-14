@@ -58,7 +58,7 @@ pub fn build_bin_index(posting_path: &str, index_path: &str, lexicon_path: &str,
                 (docid, freq)
             }).collect();
 
-            process_postings(&mut index_file, &mut lexicon_file, &mut directory_file, term, postings, &mut total_terms)?;
+            index_postings(&mut index_file, &mut lexicon_file, &mut directory_file, term, postings, &mut total_terms)?;
         }
     }
 
@@ -82,7 +82,7 @@ pub fn build_bin_index(posting_path: &str, index_path: &str, lexicon_path: &str,
 
             match bincode::deserialize::<(String, Vec<(u32, u32)>)>(&buffer) {
                 Ok((term, postings)) => {
-                    process_postings(&mut index_file, &mut lexicon_file, &mut directory_file, &term, postings, &mut total_terms)?;
+                    index_postings(&mut index_file, &mut lexicon_file, &mut directory_file, &term, postings, &mut total_terms)?;
                 },
                 Err(e) => {
                     eprintln!("(bin indexer) Failed to deserialize binary data: {}", e);
@@ -101,7 +101,7 @@ pub fn build_bin_index(posting_path: &str, index_path: &str, lexicon_path: &str,
 }
 
 // For each term
-fn process_postings(
+fn index_postings(
     index_file: &mut BufWriter<File>,
     lexicon_file: &mut BufWriter<File>,
     directory_file: &mut BufWriter<File>,
@@ -124,21 +124,48 @@ fn process_postings(
         total_term_freq: postings.iter().map(|&(_, freq)| freq).sum(),
         term_start_pointer: index_file.stream_position()?,
         num_blocks: (postings.len() as f32 / BLOCK_SIZE as f32).ceil() as u32,
-        num_posting_in_last_block: (postings.len() % BLOCK_SIZE) as u32,
+        num_posting_in_last_block: match postings.len() % BLOCK_SIZE {
+            0 => {
+                if postings.len() / BLOCK_SIZE == 0 {
+                    postings.len() as u32 // Only one block which is not full
+                } else {
+                    BLOCK_SIZE as u32 // The last block is exactly BLOCK_SIZE
+                }
+            },
+            remainder => remainder as u32, // Partial last block
+        },
         last_doc_id: postings.last().unwrap().0,
         compressed_docids_per_block: Vec::new(),
         block_offsets: Vec::new(),
         block_maxima: Vec::new(),
     };
 
+    let mut last_doc_id = 0;
+    let mut actual_max_doc_id = 0;
 
     // Processing each block
     for block in postings.chunks(BLOCK_SIZE) {
-        let block_docids: Vec<u32> = block.iter().map(|&(docid, _)| docid).collect();
-        let block_freqs: Vec<u32> = block.iter().map(|&(_, freq)| freq).collect();
+        let mut block_docids: Vec<u32> = Vec::with_capacity(block.len());
+        let mut block_freqs: Vec<u32> = Vec::with_capacity(block.len());
+
+        for &(docid, freq) in block {
+            // Update the actual max doc ID
+            actual_max_doc_id = actual_max_doc_id.max(docid);
+
+            // Calculate delta
+            let delta = if last_doc_id == 0 { docid } else { docid - last_doc_id };
+            last_doc_id = docid;
+
+            // Store delta instead of docid
+            block_docids.push(delta);
+
+            // Store frequency
+            block_freqs.push(freq);
+        }
 
         metadata.block_offsets.push(index_file.stream_position()?);
-        metadata.block_maxima.push(*block_docids.last().unwrap());
+        // Store the actual maximum docid of the block
+        metadata.block_maxima.push(actual_max_doc_id);
 
         // Compress and write docids for the block
         let mut compressed_docids = vec![0u8; block_docids.len() * 5];

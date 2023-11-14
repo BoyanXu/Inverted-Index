@@ -170,6 +170,7 @@ impl TermQueryProcessor {
         self.index_file.seek(SeekFrom::Start(term_metadata.term_start_pointer))?;
 
         let mut postings = Vec::with_capacity(term_metadata.doc_freq as usize);
+        let mut last_doc_id = 0; // Initialize last_doc_id
 
         // For each block
         for (i, &compressed_size) in term_metadata.compressed_docids_per_block.iter().enumerate() {
@@ -187,6 +188,15 @@ impl TermQueryProcessor {
             let mut docids = vec![0u32; block_size];
             decode::<Scalar>(&compressed_docids, block_size, &mut docids);
 
+            // Adjust the first docid in the block if necessary
+            if last_doc_id != 0 {
+                docids[0] += last_doc_id;
+            }
+
+            // Delta decoding
+            let decoded_docids = delta_decoding(&docids);
+            last_doc_id = *decoded_docids.last().unwrap();
+
             // Read frequencies for this block
             let mut frequencies = vec![0u32; block_size];
             for freq in &mut frequencies {
@@ -194,7 +204,7 @@ impl TermQueryProcessor {
             }
 
             // Combine docids and frequencies into postings
-            postings.extend(docids.into_iter().zip(frequencies.into_iter()));
+            postings.extend(decoded_docids.into_iter().zip(frequencies.into_iter()));
         }
         Ok(postings)
     }
@@ -203,10 +213,15 @@ impl TermQueryProcessor {
         let term_metadata = self.query_term_metadata(term)?;
 
         let mut postings = Vec::new();
+        let mut last_doc_id = 0;
 
         // Iterate through the blocks to find the starting block
         for (i, &max_docid) in term_metadata.block_maxima.iter().enumerate() {
             if max_docid < k {
+                if i > 0 {
+                    // Update last_doc_id with the maximum docid of the previous block
+                    last_doc_id = term_metadata.block_maxima[i - 1];
+                }
                 continue; // Skip blocks where max_docid is less than k
             }
 
@@ -230,6 +245,19 @@ impl TermQueryProcessor {
                 let mut docids = vec![0u32; block_size];
                 decode::<Scalar>(&compressed_docids, block_size, &mut docids);
 
+                // Adjust the first docid in the block if necessary
+                if last_doc_id != 0 {
+                    docids[0] += last_doc_id;
+                }
+
+                // Perform delta decoding for the rest of the block
+                let decoded_docids = delta_decoding(&docids);
+
+                // Update last_doc_id for the next block, if there are decoded docids
+                if let Some(&last_decoded_docid) = decoded_docids.last() {
+                    last_doc_id = last_decoded_docid;
+                }
+
                 // Read frequencies for this block
                 let mut frequencies = vec![0u32; block_size];
                 for freq in &mut frequencies {
@@ -237,7 +265,7 @@ impl TermQueryProcessor {
                 }
 
                 // Combine docids and frequencies into postings
-                postings.extend(docids.into_iter().zip(frequencies.into_iter()).filter(|&(docid, _)| docid >= k));
+                postings.extend(decoded_docids.into_iter().zip(frequencies.into_iter()).filter(|&(docid, _)| docid >= k));
             }
             break; // Break after processing the required blocks
         }
@@ -369,4 +397,21 @@ impl TermQueryProcessor {
     }
 
 
+}
+
+fn delta_decoding(encoded_docids: &[u32]) -> Vec<u32> {
+    let mut decoded_docids = Vec::with_capacity(encoded_docids.len());
+    let mut last_doc_id = 0;
+
+    for &encoded_docid in encoded_docids {
+        let docid = if last_doc_id == 0 { // The first docid is not a delta
+            encoded_docid
+        } else {
+            last_doc_id + encoded_docid
+        };
+        decoded_docids.push(docid);
+        last_doc_id = docid;
+    }
+
+    decoded_docids
 }
