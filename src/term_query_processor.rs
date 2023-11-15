@@ -15,6 +15,21 @@ use crate::utils::{BM25_K1, BM25_B};
 
 const BLOCK_SIZE: usize = 64;
 
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct SearchResult {
+    doc_id: u32,
+    doc_url: String,
+    score: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct QueryResponse {
+    query: String,
+    results: Vec<SearchResult>,
+}
+
 pub struct TermQueryProcessor {
     directory_file: BufReader<File>,
     lexicon_file: BufReader<File>,
@@ -273,13 +288,13 @@ impl TermQueryProcessor {
         Ok(postings)
     }
 
-    pub fn conjunctive_query(&mut self, query: &str) {
-        println!("=======================================");
-        println!("Conjunctive Query: {}, Top 10 results:", query);
+    pub fn conjunctive_query(&mut self, query: &str) -> serde_json::Result<String> {
         let query_terms = tokenize(query);
         let mut term_postings_lengths = HashMap::new();
         let mut valid_terms = Vec::new();
+        let mut results = Vec::new();
 
+        // Loop through each term in the query
         for term in &query_terms {
             match self.query_term_metadata(term) {
                 Ok(metadata) => {
@@ -287,27 +302,35 @@ impl TermQueryProcessor {
                     valid_terms.push(term);
                 },
                 Err(_) => {
-                    println!("Term '{}' not found in lexicon, likely a typo, skipping...", term);
+                    // Handle the case where the term is not found
+                    continue;
                 }
             }
         }
 
         if valid_terms.is_empty() {
-            println!("No valid terms found in the query.");
-            return;
+            // Return early if no valid terms are found
+            return serde_json::to_string(&QueryResponse {
+                query: query.to_string(),
+                results,
+            });
         }
 
+        // Find the term with the shortest postings list
         let shortest_term = term_postings_lengths.iter().min_by_key(|&(_, v)| v).map(|(&k, _)| k).unwrap();
-        let mut shortest_postings: Vec<(u32, f32)> = match self.query_term_all_postings(shortest_term) {
+        let mut shortest_postings = match self.query_term_all_postings(shortest_term) {
             Ok(postings) => postings.iter()
                 .map(|&(doc_id, freq)| {
                     let bm25_score = self.bm25(freq, term_postings_lengths[shortest_term], doc_id);
                     (doc_id, bm25_score)
                 })
-                .collect(),
+                .collect::<Vec<(u32, f32)>>(),
             Err(_) => {
-                println!("Error retrieving postings for term '{}', aborting query.", shortest_term);
-                return;
+                // Handle error if postings cannot be retrieved
+                return serde_json::to_string(&QueryResponse {
+                    query: query.to_string(),
+                    results,
+                });
             }
         };
 
@@ -334,38 +357,42 @@ impl TermQueryProcessor {
             shortest_postings = intersected_postings;
         }
 
-        if shortest_postings.is_empty() {
-            println!("No documents match the query.");
-            return;
+        if !shortest_postings.is_empty() {
+            shortest_postings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (doc_id, score) in shortest_postings.iter().take(10) {
+                results.push(SearchResult {
+                    doc_id: *doc_id,
+                    doc_url: self.doc_url(*doc_id).to_owned(),
+                    score: *score,
+                });
+            }
         }
 
-        shortest_postings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        for (doc_id, score) in shortest_postings.iter().take(10) {
-            println!("doc_id: {}, doc_url: {}, score: {}", doc_id, self.doc_url(*doc_id), score);
-        }
+        serde_json::to_string(&QueryResponse {
+            query: query.to_string(),
+            results,
+        })
     }
 
 
-    pub fn disjunctive_query(&mut self, query: &str) {
-        println!("=======================================");
-        println!("Disjunctive Query: {}, Top 10 results:", query);
-
+    pub fn disjunctive_query(&mut self, query: &str) -> serde_json::Result<String> {
         let query_terms = tokenize(query);
         let mut doc_scores: HashMap<u32, f32> = HashMap::new();
+        let mut results = Vec::new();
 
         // Retrieve postings lists for each term and calculate scores
         for term in query_terms {
-            if let Ok(metadata) = self.query_term_metadata(&term) {
-                if let Ok(postings) = self.query_term_all_postings(&term) {
-                    for (doc_id, freq) in postings {
-                        let bm25_score = self.bm25(freq, metadata.doc_freq, doc_id);
-                        doc_scores.entry(doc_id).and_modify(|e| *e += bm25_score).or_insert(bm25_score);
+            match self.query_term_metadata(&term) {
+                Ok(metadata) => {
+                    if let Ok(postings) = self.query_term_all_postings(&term) {
+                        for (doc_id, freq) in postings {
+                            let bm25_score = self.bm25(freq, metadata.doc_freq, doc_id);
+                            doc_scores.entry(doc_id).and_modify(|e| *e += bm25_score).or_insert(bm25_score);
+                        }
                     }
-                } else {
-                    println!("No postings found for term: {}", term);
                 }
-            } else {
-                println!("Term not found in metadata: {}", term);
+                // Continue on error, you may choose to handle it differently
+                _ => continue,
             }
         }
 
@@ -374,8 +401,17 @@ impl TermQueryProcessor {
         sorted_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         for (doc_id, score) in sorted_docs.iter().take(10) {
-            println!("doc_id: {}, doc_url: {}, score: {}", doc_id, self.doc_url(*doc_id), score);
+            results.push(SearchResult {
+                doc_id: *doc_id,
+                doc_url: self.doc_url(*doc_id).to_owned(),
+                score: *score,
+            });
         }
+
+        serde_json::to_string(&QueryResponse {
+            query: query.to_string(),
+            results,
+        })
     }
 
     pub fn bm25(&mut self, tf: u32, df: u32, doc_id: u32) -> f32 {

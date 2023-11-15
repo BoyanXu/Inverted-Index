@@ -11,6 +11,11 @@ use std::path::Path;
 use disk_io::{process_gzip_file, merge_sorted_postings};
 use bin_indexer::build_bin_index;
 use crate::term_query_processor::TermQueryProcessor;
+use actix_files;
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use std::sync::{Arc, Mutex};
+use serde::Deserialize;
+
 
 // Function to clean up the postings_data folder
 fn cleanup_postings_data_folder() -> std::io::Result<()> {
@@ -21,9 +26,8 @@ fn cleanup_postings_data_folder() -> std::io::Result<()> {
     Ok(())
 }
 
-fn main() {
-
-    /* Assignment 2: Build the Inverted Index
+fn build_index() {
+    // Assignment 2: Build the Inverted Index
 
     if let Err(e) = cleanup_postings_data_folder() {
         eprintln!("Error cleaning up postings_data folder: {}", e);
@@ -44,31 +48,63 @@ fn main() {
                                     "data/bin_lexicon.data", "data/bin_directory.data") {
         eprintln!("Error building binary inverted index: {}", e);
     }
+}
 
-    */
+struct AppState {
+    query_processor: Arc<Mutex<TermQueryProcessor>>,
+}
 
-    // Query processor
-    // let term = "box";
-    let mut tqp = TermQueryProcessor::new("data/bin_index.data", "data/bin_lexicon.data", "data/bin_directory.data",
-                                          "data/doc_metadata.data");
-    // match tqp.query_term_all_postings(term) {
-    //     Ok(postings) => {
-    //         println!("Postings for term '{}': {:?}", term, postings);
-    //     },
-    //     Err(e) => {
-    //         eprintln!("Error querying term: {}", e);
-    //     }
-    // }
-    //
-    // match tqp.query_term_postings_after_doc_k(term, 10000) {
-    //     Ok(postings) => {
-    //         println!("Postings for term '{}' after k: {:?} ", term, postings);
-    //     },
-    //     Err(e) => {
-    //         eprintln!("Error querying term: {}", e);
-    //     }
-    // }
+#[derive(Deserialize)]
+struct QueryParams {
+    query: String,
+}
 
-    tqp.conjunctive_query("software engineering books");
-    tqp.disjunctive_query("software engineering books");
+async fn handle_conjunctive_query(
+    data: web::Data<AppState>,
+    query: web::Query<QueryParams>,
+) -> impl Responder {
+    let mut processor = data.query_processor.lock().unwrap();
+
+    match processor.conjunctive_query(&query.query) {
+        Ok(json) => HttpResponse::Ok().content_type("application/json").body(json),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+async fn handle_disjunctive_query(
+    data: web::Data<AppState>,
+    query: web::Query<QueryParams>,
+) -> impl Responder {
+    let mut processor = data.query_processor.lock().unwrap();
+
+    match processor.disjunctive_query(&query.query) {
+        Ok(json) => HttpResponse::Ok().content_type("application/json").body(json),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init();
+
+    // Create your TermQueryProcessor instance here
+    let tqp = Arc::new(Mutex::new(TermQueryProcessor::new("data/bin_index.data", "data/bin_lexicon.data", "data/bin_directory.data",
+                                                          "data/doc_metadata.data")));
+
+    HttpServer::new(move || {
+        let app_data = web::Data::new(AppState {
+            query_processor: tqp.clone(),
+        });
+
+        App::new()
+            .app_data(app_data)
+            .service(web::resource("/conjunctive_query").route(web::get().to(handle_conjunctive_query)))
+            .service(web::resource("/disjunctive_query").route(web::get().to(handle_disjunctive_query)))
+            // Serve static files
+            .service(actix_files::Files::new("/", "./static").index_file("index.html"))
+    })
+        .bind("127.0.0.1:8080")?
+        .run()
+        .await
 }

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org"></script>
+</head>
+<body class="bg-gray-100">
+<div class="container mx-auto p-8">
+    <div class="max-w-md mx-auto bg-white rounded-lg overflow-hidden md:max-w-lg">
+        <div class="md:flex">
+            <div class="w-full p-4">
+                <div class="relative">
+                    <h1 class="text-2xl text-gray-800 font-semibold mb-3">Search Queries</h1>
+                    <!-- Conjunctive Query Form -->
+                    <form hx-get="/conjunctive_query" hx-target="#results" hx-trigger="submit" class="mb-4">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-bold mb-2" for="conjunctive-query">
+                                Conjunctive Query
+                            </label>
+                            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="conjunctive-query" name="query" type="text" placeholder="Enter conjunctive query">
+                        </div>
+                        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
+                            Search
+                        </button>
+                    </form>
+
+                    <!-- Disjunctive Query Form -->
+                    <form hx-get="/disjunctive_query" hx-target="#results" hx-trigger="submit">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-bold mb-2" for="disjunctive-query">
+                                Disjunctive Query
+                            </label>
+                            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="disjunctive-query" name="query" type="text" placeholder="Enter disjunctive query">
+                        </div>
+                        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
+                            Search
+                        </button>
+                    </form>
+
+                    <!-- Results container -->
+                    <div id="results" class="mt-6"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
