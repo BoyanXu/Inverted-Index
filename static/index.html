@@ -9,13 +9,13 @@
 </head>
 <body class="bg-gray-100">
 <div class="container mx-auto p-8">
-    <div class="max-w-md mx-auto bg-white rounded-lg overflow-hidden md:max-w-lg">
+    <div class="max-w-md mx-auto bg-white rounded-lg overflow-hidden md:max-w-2xl">
         <div class="md:flex">
             <div class="w-full p-4">
                 <div class="relative">
                     <h1 class="text-2xl text-gray-800 font-semibold mb-3">Search Queries</h1>
                     <!-- Conjunctive Query Form -->
-                    <form hx-get="/conjunctive_query" hx-target="#results" hx-trigger="submit" class="mb-4">
+                    <form hx-get="/conjunctive_query" hx-trigger="submit" hx-params="query" hx-target="#results">
                         <div class="mb-4">
                             <label class="block text-gray-700 text-sm font-bold mb-2" for="conjunctive-query">
                                 Conjunctive Query
@@ -26,9 +26,9 @@
                             Search
                         </button>
                     </form>
-
+                    <br>
                     <!-- Disjunctive Query Form -->
-                    <form hx-get="/disjunctive_query" hx-target="#results" hx-trigger="submit">
+                    <form hx-get="/disjunctive_query" hx-trigger="submit" hx-params="query" hx-target="#results">
                         <div class="mb-4">
                             <label class="block text-gray-700 text-sm font-bold mb-2" for="disjunctive-query">
                                 Disjunctive Query
@@ -47,5 +47,31 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.body.addEventListener('htmx:afterOnLoad', function(event) {
+        const xhr = event.detail.xhr; // Get the XMLHttpRequest object
+        if (xhr.getResponseHeader('X-Response-Type') === 'json') {
+            const resultsContainer = document.getElementById('results');
+            const data = JSON.parse(xhr.responseText); // Parse the JSON response
+            resultsContainer.innerHTML = ''; // Clear previous results
+
+            data.results.forEach(result => {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'p-4 mb-2 border-b border-gray-200';
+                resultDiv.innerHTML = `
+                <p class='text-lg text-blue-600 truncate'>
+                    <a href='${result.doc_url}' target='_blank' title='${result.doc_url}'>${result.doc_url}</a>
+                </p>
+                <p class='text-sm text-gray-600'>Document ID: ${result.doc_id}</p>
+                <p class='text-sm text-gray-600'>Document Url: ${result.doc_url}</p>
+                <p class='text-sm text-gray-600'>Score: ${result.score.toFixed(2)}</p>
+            `;
+                resultsContainer.appendChild(resultDiv);
+            });
+        }
+    });
+
+</script>
 </body>
 </html>

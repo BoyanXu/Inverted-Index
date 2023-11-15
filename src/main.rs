@@ -66,7 +66,10 @@ async fn handle_conjunctive_query(
     let mut processor = data.query_processor.lock().unwrap();
 
     match processor.conjunctive_query(&query.query) {
-        Ok(json) => HttpResponse::Ok().content_type("application/json").body(json),
+        Ok(json) => HttpResponse::Ok()
+            .insert_header(("X-Response-Type", "json"))
+            .content_type("application/json")
+            .body(json),
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }
@@ -78,11 +81,13 @@ async fn handle_disjunctive_query(
     let mut processor = data.query_processor.lock().unwrap();
 
     match processor.disjunctive_query(&query.query) {
-        Ok(json) => HttpResponse::Ok().content_type("application/json").body(json),
+        Ok(json) => HttpResponse::Ok()
+            .insert_header(("X-Response-Type", "json"))
+            .content_type("application/json")
+            .body(json),
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }
-
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
